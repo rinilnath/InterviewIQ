@@ -20,7 +20,7 @@ router.use(verifyToken);
 // POST /api/interview/generate
 router.post('/generate', generateLimiter, async (req, res) => {
   try {
-    const { jdText, seniorityLevel, techStack, customExpectations, useKnowledgeBase } = req.body;
+    const { jdText, seniorityLevel, techStack, customExpectations, useKnowledgeBase, previousKitId } = req.body;
 
     if (!jdText || !seniorityLevel || !techStack) {
       return res.status(400).json({ error: 'JD text, seniority level, and tech stack are required' });
@@ -43,6 +43,25 @@ router.post('/generate', generateLimiter, async (req, res) => {
       }
     }
 
+    // For regeneration: fetch previous questions to avoid repeating them
+    let previousQuestions = [];
+    let isRegenerate = false;
+    if (previousKitId) {
+      isRegenerate = true;
+      const { data: prevKit } = await supabase
+        .from('interview_kits')
+        .select('output_json')
+        .eq('id', previousKitId)
+        .single();
+
+      if (prevKit?.output_json?.sections) {
+        previousQuestions = prevKit.output_json.sections
+          .flatMap((s) => s.questions || [])
+          .map((q) => q.question)
+          .filter(Boolean);
+      }
+    }
+
     // Generate kit via Claude
     const kitOutput = await generateInterviewKit({
       jdText,
@@ -50,6 +69,8 @@ router.post('/generate', generateLimiter, async (req, res) => {
       techStack,
       customExpectations,
       knowledgeBaseDocs,
+      isRegenerate,
+      previousQuestions,
     });
 
     // Save to database

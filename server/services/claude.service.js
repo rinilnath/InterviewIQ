@@ -5,8 +5,8 @@ const client = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
 
 const SYSTEM_PROMPT = `You are an expert technical interviewer and talent assessor with 25 years of experience evaluating candidates from freshers to CTOs across enterprise technology stacks. You generate precise, seniority-calibrated interview question banks with detailed scoring rubrics. You understand the exact difference in expectations between each seniority level. You always return valid JSON only. No explanation, no markdown fences, no preamble. Pure JSON.`;
 
-async function generateInterviewKit({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs }) {
-  const userPrompt = buildPrompt({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs });
+async function generateInterviewKit({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions }) {
+  const userPrompt = buildPrompt({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions });
 
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',

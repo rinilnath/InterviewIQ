@@ -1,6 +1,6 @@
 const SENIORITY_CONFIG = {
   'Fresher (0-1 yr)': {
-    questionCount: 8,
+    questionCount: 30,
     weights: {
       'Core Technology': 60,
       'Problem Solving': 20,
@@ -9,7 +9,7 @@ const SENIORITY_CONFIG = {
     calibration: 'Focus on syntax, basic OOP, simple data structures, and fundamentals only. Keep questions entry-level.',
   },
   'Junior Developer (1-3 yrs)': {
-    questionCount: 10,
+    questionCount: 30,
     weights: {
       'Core Technology': 60,
       'Problem Solving': 20,
@@ -18,7 +18,7 @@ const SENIORITY_CONFIG = {
     calibration: 'Focus on core language features, basic frameworks, simple debugging. Slightly more depth than fresher.',
   },
   'Mid-Level Developer (3-5 yrs)': {
-    questionCount: 12,
+    questionCount: 30,
     weights: {
       'Core Technology': 40,
       'System Design & Architecture': 25,
@@ -28,7 +28,7 @@ const SENIORITY_CONFIG = {
     calibration: 'Focus on design patterns, REST APIs, DB optimization, unit testing. Expect practical experience.',
   },
   'Senior Developer (5-8 yrs)': {
-    questionCount: 15,
+    questionCount: 30,
     weights: {
       'Core Technology': 40,
       'System Design & Architecture': 25,
@@ -38,7 +38,7 @@ const SENIORITY_CONFIG = {
     calibration: 'Focus on system design, performance tuning, code reviews, mentoring scenarios. Deep expertise expected.',
   },
   'Tech Lead (8-12 yrs)': {
-    questionCount: 18,
+    questionCount: 30,
     weights: {
       'System Design & Architecture': 35,
       'Analytical Thinking': 25,
@@ -48,7 +48,7 @@ const SENIORITY_CONFIG = {
     calibration: 'Focus on team decisions, technical debt tradeoffs, delivery under pressure, conflict resolution.',
   },
   'Solution Architect (10-15 yrs)': {
-    questionCount: 20,
+    questionCount: 30,
     weights: {
       'System Design & Architecture': 35,
       'Analytical Thinking': 25,
@@ -58,7 +58,7 @@ const SENIORITY_CONFIG = {
     calibration: 'Focus on enterprise integration, cloud strategy, multi-system design, NFR handling.',
   },
   'Enterprise Architect (15-20 yrs)': {
-    questionCount: 22,
+    questionCount: 30,
     weights: {
       'System Design & Architecture': 35,
       'Analytical Thinking': 25,
@@ -68,7 +68,7 @@ const SENIORITY_CONFIG = {
     calibration: 'Focus on TOGAF alignment, governance, org-wide technology strategy, vendor evaluation, roadmap planning.',
   },
   'Technology Head / CTO (20+ yrs)': {
-    questionCount: 25,
+    questionCount: 30,
     weights: {
       'System Design & Architecture': 35,
       'Analytical Thinking': 25,
@@ -79,7 +79,7 @@ const SENIORITY_CONFIG = {
   },
 };
 
-function buildPrompt({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs }) {
+function buildPrompt({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions }) {
   const config = SENIORITY_CONFIG[seniorityLevel];
   if (!config) throw new Error(`Unknown seniority level: ${seniorityLevel}`);
 
@@ -114,22 +114,40 @@ QUESTION SOURCING:
 ${kbCount > 0
   ? `- Generate ${aiCount} questions (75%) yourself based on seniority, JD, and tech stack. Tag these with source: "AI" and kb_label: null.
 - Select exactly ${kbCount} questions (25%) from the knowledge base context provided below. Tag these with source: "KB" and include the document label in kb_label.`
-  : '- Generate all ${questionCount} questions yourself based on seniority, JD, and tech stack. Tag all with source: "AI" and kb_label: null.'
+  : `- Generate all ${questionCount} questions yourself based on seniority, JD, and tech stack. Tag all with source: "AI" and kb_label: null.`
 }
-
+${isRegenerate && previousQuestions && previousQuestions.length > 0 ? `
+REGENERATION INSTRUCTION (CRITICAL):
+This is a regeneration request. You MUST generate completely fresh questions. Do NOT reuse, rephrase, or repeat any of the following previously generated questions:
+${previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+Every single question in this output must be brand new and distinct from the above list.
+` : ''}
 CORE TECHNOLOGY SECTION RULES (CRITICAL):
-- All "Core Technology" section questions MUST be hands-on and practical — ask the candidate to write code, debug a snippet, explain their implementation approach, or reason through a real technical problem
+- All "Core Technology" questions MUST be hands-on and practical — ask the candidate to write code, debug a snippet, explain their implementation approach, or reason through a real technical problem
 - Do NOT generate theoretical definitions, history lessons, or "what is X" questions for Core Technology
-- Examples of GOOD Core Technology questions: "Write a function that...", "Given this code snippet, what is wrong and how would you fix it?", "How would you implement X feature in [tech stack]?", "What happens step by step when you call X?"
-- Examples of BAD Core Technology questions: "What is polymorphism?", "Explain the history of REST", "What are the advantages of microservices?"
+- Good examples: "Write a function that...", "How would you implement X in [stack]?", "What happens step-by-step when you call X?", "Identify and fix the issue in this code..."
+- Bad examples: "What is polymorphism?", "Explain REST", "What are the advantages of microservices?"
 - Even for Fresher/Junior levels, Core Technology questions must test hands-on thinking, not textbook recall
+
+PROBLEM SOLVING SECTION RULES (CRITICAL):
+- At least 40% of "Problem Solving" questions MUST be "fix_the_code" type
+- For fix_the_code questions: write a realistic code snippet (8-15 lines) in the relevant tech stack with 1-3 intentional bugs (logic errors, off-by-one, null handling, wrong API usage, type errors, etc.)
+- The code_snippet must be clean, well-indented, readable — only the bugs should be wrong
+- The question text for fix_the_code should be: "Find and fix the bug(s) in the following code:"
+- Remaining Problem Solving questions should be algorithmic or design problem questions
+
+STRONG ANSWER FORMAT RULES (CRITICAL):
+- strong_answer must be crisp, precise, and to the point — maximum 4 sentences or 5 bullet points
+- If the answer involves code, use concise pseudo-code showing only the key constructs and logic — NOT full runnable implementations
+- Focus on WHAT the correct approach is and WHY, not on verbosity
+- For fix_the_code questions, strong_answer must clearly state: what the bug is, why it is wrong, and the corrected construct
 
 OUTPUT REQUIREMENTS:
 - Distribute questions proportionally across sections based on weight percentages
-- Each question must have weak_answer, average_answer, and strong_answer rubrics (2-3 sentences each)
 - score must be null, notes must be empty string ""
 - kit_title should be a descriptive title based on the JD and seniority level
-- Ensure questions are appropriately calibrated for the seniority level
+- question_type must be "fix_the_code" or "standard"
+- code_snippet is required for fix_the_code questions, must be null for standard questions
 
 REQUIRED JSON OUTPUT SCHEMA (return ONLY this JSON, no other text):
 {
@@ -145,6 +163,8 @@ REQUIRED JSON OUTPUT SCHEMA (return ONLY this JSON, no other text):
         {
           "id": number,
           "question": "string",
+          "question_type": "standard" | "fix_the_code",
+          "code_snippet": "string | null",
           "source": "AI" | "KB",
           "kb_label": "string | null",
           "weak_answer": "string",
