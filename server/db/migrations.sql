@@ -60,16 +60,15 @@ CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- Seed default admin
 -- Password: Admin@123
--- Generate with: node -e "const bcrypt=require('bcryptjs'); bcrypt.hash('Admin@123',10).then(h=>console.log(h))"
--- Then replace the hash below:
 INSERT INTO users (name, email, password_hash, role)
 VALUES (
   'Administrator',
   'admin@interviewiq.com',
-  '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWq',
+  '$2b$10$Sjn2tSb78DgYpayRzeVdvez9ipCGTtIAgr41aBauHO5eWG8vyTqRq',
   'admin'
 )
-ON CONFLICT (email) DO NOTHING;
+ON CONFLICT (email) DO UPDATE SET
+  password_hash = '$2b$10$Sjn2tSb78DgYpayRzeVdvez9ipCGTtIAgr41aBauHO5eWG8vyTqRq';
 
--- Note: The hash above is for 'Admin@123'
--- Change this password immediately after first login via the admin panel
+-- Note: Default password is Admin@123
+-- Change this immediately after first login via Admin → Users → Reset Password
