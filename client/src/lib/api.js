@@ -25,7 +25,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isAuthMe = error.config?.url?.includes('/auth/me');
+    const onLoginPage = window.location.pathname === '/login';
+
+    if (error.response?.status === 401 && !isAuthMe && !onLoginPage) {
       useAuthStore.getState().logout();
       window.location.href = '/login';
     }
