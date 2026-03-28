@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -34,14 +34,18 @@ export default function KitView() {
   const queryClient = useQueryClient();
   const [kitData, setKitData] = useState(null);
 
-  const { isLoading } = useQuery({
+  const { data: fetchedKit, isLoading } = useQuery({
     queryKey: ['kit', id],
     queryFn: async () => {
       const res = await api.get(`/interview/${id}`);
-      setKitData(res.data.kit);
       return res.data.kit;
     },
   });
+
+  // Sync query data (including cache hits) into local editable state
+  useEffect(() => {
+    if (fetchedKit) setKitData(fetchedKit);
+  }, [fetchedKit]);
 
   const saveMutation = useMutation({
     mutationFn: async ({ isCompleted }) => {

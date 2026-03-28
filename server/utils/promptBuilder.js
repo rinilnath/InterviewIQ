@@ -117,6 +117,13 @@ ${kbCount > 0
   : '- Generate all ${questionCount} questions yourself based on seniority, JD, and tech stack. Tag all with source: "AI" and kb_label: null.'
 }
 
+CORE TECHNOLOGY SECTION RULES (CRITICAL):
+- All "Core Technology" section questions MUST be hands-on and practical — ask the candidate to write code, debug a snippet, explain their implementation approach, or reason through a real technical problem
+- Do NOT generate theoretical definitions, history lessons, or "what is X" questions for Core Technology
+- Examples of GOOD Core Technology questions: "Write a function that...", "Given this code snippet, what is wrong and how would you fix it?", "How would you implement X feature in [tech stack]?", "What happens step by step when you call X?"
+- Examples of BAD Core Technology questions: "What is polymorphism?", "Explain the history of REST", "What are the advantages of microservices?"
+- Even for Fresher/Junior levels, Core Technology questions must test hands-on thinking, not textbook recall
+
 OUTPUT REQUIREMENTS:
 - Distribute questions proportionally across sections based on weight percentages
 - Each question must have weak_answer, average_answer, and strong_answer rubrics (2-3 sentences each)
