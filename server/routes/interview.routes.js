@@ -85,7 +85,7 @@ router.get('/history', async (req, res) => {
 
     let query = supabase
       .from('interview_kits')
-      .select('id, kit_title, seniority_level, tech_stack, is_completed, created_at, generated_by, users(name)', { count: 'exact' });
+      .select('id, kit_title, seniority_level, tech_stack, is_completed, created_at, generated_by', { count: 'exact' });
 
     // Non-admin users see only their own
     if (req.user.role !== 'admin') {
@@ -129,7 +129,7 @@ router.get('/:id', async (req, res) => {
 
     const { data, error } = await supabase
       .from('interview_kits')
-      .select('*, users(name, email)')
+      .select('*')
       .eq('id', id)
       .single();
 

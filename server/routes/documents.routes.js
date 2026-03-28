@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('documents')
-      .select('id, filename, original_name, file_type, label, document_type, file_size_bytes, storage_path, uploaded_by, created_at, users(name)')
+      .select('id, filename, original_name, file_type, label, document_type, file_size_bytes, storage_path, uploaded_by, created_at')
       .order('created_at', { ascending: false });
 
     if (error) throw error;

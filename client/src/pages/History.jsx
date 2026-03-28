@@ -43,13 +43,13 @@ export default function History() {
   const [status, setStatus] = useState('');
   const [deleteId, setDeleteId] = useState(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ['interview', 'history', search, seniority, status],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: 50, page: 1 });
       if (search) params.append('search', search);
-      if (seniority) params.append('seniority', seniority);
-      if (status) params.append('status', status);
+      if (seniority && seniority !== 'all') params.append('seniority', seniority);
+      if (status && status !== 'all') params.append('status', status);
       const res = await api.get(`/interview/history?${params}`);
       return res.data;
     },
@@ -102,7 +102,7 @@ export default function History() {
             <SelectValue placeholder="All seniorities" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All seniorities</SelectItem>
+            <SelectItem value="all">All seniorities</SelectItem>
             {SENIORITY_LEVELS.map((l) => (
               <SelectItem key={l} value={l}>{l}</SelectItem>
             ))}
@@ -113,12 +113,19 @@ export default function History() {
             <SelectValue placeholder="All statuses" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All statuses</SelectItem>
+            <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="completed">Completed</SelectItem>
             <SelectItem value="in_progress">In Progress</SelectItem>
           </SelectContent>
         </Select>
       </div>
+
+      {/* Error state */}
+      {isError && (
+        <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700">
+          Failed to load history: {error?.response?.data?.error || error?.message || 'Unknown error'}
+        </div>
+      )}
 
       {/* Results */}
       {isLoading ? (
