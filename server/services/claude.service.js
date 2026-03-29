@@ -8,14 +8,18 @@ const SYSTEM_PROMPT = `You are an expert technical interviewer and talent assess
 async function generateInterviewKit({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions }) {
   const userPrompt = buildPrompt({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions });
 
-  const message = await client.messages.create({
+  let content = '';
+  const stream = await client.messages.stream({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 32000,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userPrompt }],
   });
-
-  const content = message.content[0].text;
+  for await (const chunk of stream) {
+    if (chunk.type === 'content_block_delta' && chunk.delta?.type === 'text_delta') {
+      content += chunk.delta.text;
+    }
+  }
 
   // Parse with progressive fallback
   let parsed;
