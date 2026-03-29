@@ -140,7 +140,7 @@ STRONG ANSWER FORMAT RULES (CRITICAL):
 - Write strong_answer in FIRST PERSON, as if you are the expert candidate answering in the actual interview
 - Sound confident, technically sharp, and natural — like a distinguished senior professional speaking
 - Be concise and precise — maximum 4-5 sentences for prose, or a short code block with 2-3 lines of explanation
-- When code is needed, use markdown code fences with the language tag: ```javascript\n...\n``` — show only the key constructs, not full runnable implementations
+- When code is needed, use markdown code fences with the language tag: \`\`\`javascript\\n...\\n\`\`\` — show only the key constructs, not full runnable implementations
 - Do NOT use rubric language like "A strong candidate would..." or "The ideal answer is..." — speak directly as the candidate
 - For fix_the_code questions: identify the exact bug(s), explain in one sentence why it is wrong, then show the corrected code in a fenced code block
 - Example tone: "I'd approach this by... The key insight here is... In my current project I've handled this with..."
