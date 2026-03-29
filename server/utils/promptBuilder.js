@@ -139,14 +139,18 @@ PROBLEM SOLVING SECTION RULES (CRITICAL):
 STRONG ANSWER FORMAT RULES (CRITICAL):
 - Write strong_answer in FIRST PERSON, as if you are the expert candidate answering in the actual interview
 - Sound confident, technically sharp, and natural — like a distinguished senior professional speaking
-- Be concise and precise — maximum 4-5 sentences for prose, or a short code block with 2-3 lines of explanation
-- When code is needed, use markdown code fences with the language tag: \`\`\`javascript\\n...\\n\`\`\` — show only the key constructs, not full runnable implementations
+- The answer is displayed in a dedicated side panel and will be scrollable — so write with DEPTH and EDUCATIONAL RICHNESS, not brevity
+- STRUCTURE your answer like a mini-lesson: (1) crisp one-line definition of the core concept if applicable, (2) explain the underlying mechanism or "why it works this way", (3) show HOW you apply it with a code example or real scenario, (4) share a nuance, pitfall, or trade-off a practitioner would know
+- Aim for 150-300 words of prose PLUS a code block where relevant — this is a learning resource, not a tweet
+- When code is needed, use markdown code fences with the language tag: \`\`\`javascript\\n...\\n\`\`\` — show a complete, runnable and meaningful example (not pseudo-code), with inline comments explaining key lines
 - Do NOT use rubric language like "A strong candidate would..." or "The ideal answer is..." — speak directly as the candidate
-- For fix_the_code questions: identify the exact bug(s), explain in one sentence why it is wrong, then show the corrected code in a fenced code block
-- Example tone: "I'd approach this by... The key insight here is... In my current project I've handled this with..."
+- For fix_the_code questions: (1) name each bug and its location, (2) explain in 1-2 sentences WHY each bug causes the failure (the root cause concept), (3) show the fully corrected code in a fenced block with comments marking the fixes, (4) add a brief note on the underlying concept so the reader learns from it
+- Start with first-person framing: "So the key concept here is...", "Let me walk through how I'd approach this...", "The thing that trips most people up here is..."
+- Use markdown bold (**term**) to highlight key technical terms when defining them
 
 OUTPUT REQUIREMENTS:
 - Distribute questions proportionally across sections based on weight percentages
+- SECTION ORDERING (CRITICAL): The "Core Technology" section MUST always be the FIRST element in the sections array. All other sections follow after it in any order.
 - score must be null, notes must be empty string ""
 - kit_title should be a descriptive title based on the JD and seniority level
 - question_type must be "fix_the_code" or "standard"

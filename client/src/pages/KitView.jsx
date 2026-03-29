@@ -55,9 +55,16 @@ function AnswerRenderer({ text }) {
           );
         }
         if (!part.trim()) return null;
+        // Render **bold** markdown inline
+        const segments = part.split(/(\*\*[^*]+\*\*)/g);
         return (
           <p key={i} className="text-sm text-zinc-800 leading-relaxed whitespace-pre-wrap">
-            {part}
+            {segments.map((seg, j) => {
+              const boldMatch = seg.match(/^\*\*([^*]+)\*\*$/);
+              return boldMatch
+                ? <strong key={j} className="font-semibold text-zinc-900">{boldMatch[1]}</strong>
+                : seg;
+            })}
           </p>
         );
       })}
@@ -419,7 +426,7 @@ export default function KitView() {
 
       {/* Answer side panel */}
       <Sheet open={answerPanel.open} onOpenChange={(o) => setAnswerPanel({ open: o, question: answerPanel.question })}>
-        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto flex flex-col gap-0 p-0">
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto flex flex-col gap-0 p-0">
           <div className="px-6 py-4 border-b border-zinc-100 bg-emerald-50">
             <SheetHeader>
               <SheetTitle className="text-emerald-800 flex items-center gap-2">
@@ -453,7 +460,7 @@ export default function KitView() {
           </div>
           <div className="px-6 py-5 flex-1">
             <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4">
-              How a strong candidate answers
+              Expert answer &amp; concept breakdown
             </p>
             {answerPanel.question && (
               <AnswerRenderer text={answerPanel.question.strong_answer} />
