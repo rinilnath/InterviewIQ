@@ -12,6 +12,7 @@ import {
   Loader2,
   AlertTriangle,
   RefreshCw,
+  Square,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,6 +70,15 @@ export default function History() {
       toast.success('Retrying generation', 'Kit generation has been restarted.');
     },
     onError: (err) => toast.error('Retry failed', err.response?.data?.error || 'Could not restart generation.'),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (id) => api.post(`/interview/${id}/cancel`),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['interview', 'history']);
+      toast.success('Generation stopped', 'You can retry from History or the kit page.');
+    },
+    onError: (err) => toast.error('Could not stop', err.response?.data?.error || 'Failed to stop generation.'),
   });
 
   const deleteMutation = useMutation({
@@ -196,9 +206,32 @@ export default function History() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {kit.status === 'generating' && (
-                          <Badge className="bg-indigo-100 text-indigo-700 border-0 gap-1 animate-pulse">
-                            <Loader2 className="w-3 h-3 animate-spin" /> Generating
-                          </Badge>
+                          <>
+                            <Badge className="bg-indigo-100 text-indigo-700 border-0 gap-1 animate-pulse">
+                              <Loader2 className="w-3 h-3 animate-spin" /> Generating
+                            </Badge>
+                            <button
+                              onClick={(e) => { e.preventDefault(); cancelMutation.mutate(kit.id); }}
+                              disabled={cancelMutation.isPending && cancelMutation.variables === kit.id}
+                              className="flex items-center gap-1 text-xs text-rose-600 hover:text-rose-800 font-medium px-1.5 py-0.5 rounded border border-rose-200 hover:bg-rose-50 transition-colors"
+                            >
+                              <Square className="w-3 h-3 fill-current" /> Stop
+                            </button>
+                          </>
+                        )}
+                        {kit.status === 'cancelled' && (
+                          <>
+                            <Badge className="bg-zinc-100 text-zinc-600 border-0 gap-1">
+                              <Square className="w-3 h-3" /> Stopped
+                            </Badge>
+                            <button
+                              onClick={(e) => { e.preventDefault(); retryMutation.mutate(kit.id); }}
+                              disabled={retryMutation.isPending && retryMutation.variables === kit.id}
+                              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium px-1.5 py-0.5 rounded border border-indigo-200 hover:bg-indigo-50 transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Retry
+                            </button>
+                          </>
                         )}
                         {kit.status === 'failed' && (
                           <>
@@ -214,7 +247,7 @@ export default function History() {
                             </button>
                           </>
                         )}
-                        {kit.status !== 'generating' && kit.status !== 'failed' && (
+                        {kit.status !== 'generating' && kit.status !== 'failed' && kit.status !== 'cancelled' && (
                           <Badge variant={kit.is_completed ? 'success' : 'warning'}>
                             {kit.is_completed ? 'Completed' : 'In Progress'}
                           </Badge>
