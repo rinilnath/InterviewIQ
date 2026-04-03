@@ -142,7 +142,7 @@ recoverStuckGenerations();
 // POST /api/interview/generate
 router.post('/generate', generateLimiter, async (req, res) => {
   try {
-    const { jdText, seniorityLevel, techStack, customExpectations, useKnowledgeBase, previousKitId } = req.body;
+    const { jdText, seniorityLevel, techStack, customExpectations, useKnowledgeBase, kbPercentage = 25, previousKitId } = req.body;
 
     if (!jdText || !seniorityLevel || !techStack) {
       return res.status(400).json({ error: 'JD text, seniority level, and tech stack are required' });
@@ -202,6 +202,7 @@ router.post('/generate', generateLimiter, async (req, res) => {
     runGenerationJob(newKit.id, {
       jdText, seniorityLevel, techStack, customExpectations,
       knowledgeBaseDocs, isRegenerate, previousQuestions,
+      kbPercentage: useKnowledgeBase ? Math.min(100, Math.max(25, parseInt(kbPercentage) || 25)) : 0,
     });
   } catch (err) {
     console.error('Generate interview error:', err);
@@ -383,6 +384,43 @@ router.delete('/trash/:id', async (req, res) => {
   }
 });
 
+// POST /api/interview/:id/share — toggle is_shared on a completed kit
+router.post('/:id/share', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('interview_kits')
+      .select('id, generated_by, status, is_shared, deleted_at')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !existing) return res.status(404).json({ error: 'Interview kit not found' });
+    if (req.user.role !== 'admin' && existing.generated_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (existing.status !== 'completed') {
+      return res.status(400).json({ error: 'Only completed kits can be shared.' });
+    }
+    if (existing.deleted_at) {
+      return res.status(400).json({ error: 'Kit is in trash — restore it before sharing.' });
+    }
+
+    const { data, error } = await supabase
+      .from('interview_kits')
+      .update({ is_shared: !existing.is_shared, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ kit: data });
+  } catch (err) {
+    console.error('Toggle share error:', err);
+    res.status(500).json({ error: 'Failed to update sharing status' });
+  }
+});
+
 // DELETE /api/interview/all — soft-delete all active kits for the current user
 router.delete('/all', async (req, res) => {
   try {
@@ -400,6 +438,37 @@ router.delete('/all', async (req, res) => {
   } catch (err) {
     console.error('Delete all error:', err);
     res.status(500).json({ error: 'Failed to delete all kits' });
+  }
+});
+
+// GET /api/interview/shared — all shared completed kits across all users
+router.get('/shared', async (req, res) => {
+  try {
+    const { search, seniority, page = 1, limit = 20 } = req.query;
+
+    let query = supabase
+      .from('interview_kits')
+      .select(
+        'id, kit_title, seniority_level, tech_stack, is_completed, created_at, generation_seconds, generated_by',
+        { count: 'exact' },
+      )
+      .eq('is_shared', true)
+      .eq('status', 'completed')
+      .is('deleted_at', null);
+
+    if (search) query = query.ilike('kit_title', `%${search}%`);
+    if (seniority) query = query.eq('seniority_level', seniority);
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    query = query.order('created_at', { ascending: false }).range(offset, offset + parseInt(limit) - 1);
+
+    const { data, error, count } = await query;
+    if (error) throw error;
+
+    res.json({ kits: data, total: count, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    console.error('Get shared kits error:', err);
+    res.status(500).json({ error: 'Failed to fetch shared kits' });
   }
 });
 

@@ -19,5 +19,6 @@
     <include file="changesets/v1.1.0__async_generation_support.sql" relativeToChangelogFile="true"/>
     <include file="changesets/v1.2.0__generation_duration.sql"     relativeToChangelogFile="true"/>
     <include file="changesets/v1.3.0__soft_delete_trash.sql"       relativeToChangelogFile="true"/>
+    <include file="changesets/v1.4.0__shared_kits.sql"             relativeToChangelogFile="true"/>
 
 </databaseChangeLog>

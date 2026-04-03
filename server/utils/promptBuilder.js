@@ -155,7 +155,7 @@ REQUIRED JSON OUTPUT SCHEMA (return ONLY this JSON, no other text):
 // buildDynamicContext — small per-request block (JD, seniority, regen list).
 // This is NOT cached because it changes with every request.
 // ---------------------------------------------------------------------------
-function buildDynamicContext({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions }) {
+function buildDynamicContext({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions, kbPercentage = 0 }) {
   const config = SENIORITY_CONFIG[seniorityLevel];
   if (!config) throw new Error(`Unknown seniority level: ${seniorityLevel}`);
 
@@ -166,10 +166,20 @@ function buildDynamicContext({ jdText, seniorityLevel, techStack, customExpectat
     .map(([section, weight]) => `  - ${section}: ${weight}%`)
     .join('\n');
 
-  const kbCount = knowledgeBaseDocs && knowledgeBaseDocs.length > 0
-    ? Math.round(questionCount * 0.25)
-    : 0;
+  const hasKB = knowledgeBaseDocs && knowledgeBaseDocs.length > 0 && kbPercentage > 0;
+  const effectivePct = hasKB ? kbPercentage : 0;
+  const kbCount = hasKB ? Math.round(questionCount * (effectivePct / 100)) : 0;
   const aiCount = questionCount - kbCount;
+  const isFullKB = effectivePct === 100;
+
+  let sourcingInstruction;
+  if (!hasKB) {
+    sourcingInstruction = `- Generate all ${questionCount} questions yourself. Tag all source: "AI", kb_label: null.`;
+  } else if (isFullKB) {
+    sourcingInstruction = `- ALL ${questionCount} questions MUST be sourced from the knowledge base documents provided below.\n- Focus entirely on the topics, concepts, technologies, and scenarios present in those documents.\n- If the documents do not contain enough distinct concepts for ${questionCount} questions, expand the depth (different angles, edge cases, code variants) of the available concepts rather than inventing unrelated material.\n- Tag source: "KB", kb_label: <document label> for every question.`;
+  } else {
+    sourcingInstruction = `- Generate ${aiCount} questions (${100 - effectivePct}%) yourself. Tag source: "AI", kb_label: null.\n- Source exactly ${kbCount} questions (${effectivePct}%) from the knowledge base below. Tag source: "KB", kb_label: <document label>.`;
+  }
 
   let ctx = `Generate a comprehensive interview kit for the following role.
 
@@ -186,10 +196,7 @@ COMPLEXITY CALIBRATION:
 ${calibration}
 
 QUESTION SOURCING:
-${kbCount > 0
-    ? `- Generate ${aiCount} questions (75%) yourself. Tag source: "AI", kb_label: null.\n- Select exactly ${kbCount} questions (25%) from the knowledge base below. Tag source: "KB", kb_label: <document label>.`
-    : `- Generate all ${questionCount} questions yourself. Tag all source: "AI", kb_label: null.`
-  }`;
+${sourcingInstruction}`;
 
   if (isRegenerate && previousQuestions && previousQuestions.length > 0) {
     ctx += `\n\nREGENERATION INSTRUCTION (CRITICAL): Generate completely fresh questions. Do NOT reuse, rephrase, or repeat any of these previously generated questions:\n${previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\nEvery question in this output must be brand new.`;

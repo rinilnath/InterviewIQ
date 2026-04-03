@@ -38,6 +38,7 @@ export default function GenerateKit() {
   const [techStack, setTechStack] = useState([]);
   const [techInput, setTechInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [kbPercentage, setKbPercentage] = useState(25);
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
@@ -63,7 +64,7 @@ export default function GenerateKit() {
     }
     setIsSubmitting(true);
     try {
-      const res = await api.post('/interview/generate', { ...data, techStack });
+      const res = await api.post('/interview/generate', { ...data, techStack, kbPercentage });
       const kit = res.data.kit;
 
       // Register with global watcher so toast fires even if user navigates elsewhere
@@ -198,19 +199,53 @@ export default function GenerateKit() {
                 {...register('customExpectations')}
               />
             </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-50 border border-zinc-200">
-              <div>
-                <p className="text-sm font-medium text-zinc-900">Use Knowledge Base</p>
-                <p className="text-xs text-zinc-500 mt-0.5">Include questions from uploaded documents (25% of total)</p>
-              </div>
-              <Controller
-                name="useKnowledgeBase"
-                control={control}
-                render={({ field }) => (
-                  <Switch checked={field.value} onCheckedChange={field.onChange} />
-                )}
-              />
-            </div>
+            <Controller
+              name="useKnowledgeBase"
+              control={control}
+              render={({ field }) => (
+                <div className="rounded-lg bg-zinc-50 border border-zinc-200 overflow-hidden">
+                  <div className="flex items-center justify-between p-3">
+                    <div>
+                      <p className="text-sm font-medium text-zinc-900">Use Knowledge Base</p>
+                      <p className="text-xs text-zinc-500 mt-0.5">
+                        {field.value
+                          ? kbPercentage === 100
+                            ? 'All questions sourced entirely from your uploaded documents'
+                            : `${kbPercentage}% of questions from uploaded documents`
+                          : 'Include questions from uploaded documents'}
+                      </p>
+                    </div>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </div>
+                  {field.value && (
+                    <div className="px-3 pb-3 border-t border-zinc-200 pt-2.5">
+                      <p className="text-xs text-zinc-500 mb-2">Knowledge base coverage</p>
+                      <div className="flex gap-1.5">
+                        {[25, 50, 75, 100].map((pct) => (
+                          <button
+                            key={pct}
+                            type="button"
+                            onClick={() => setKbPercentage(pct)}
+                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-colors ${
+                              kbPercentage === pct
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-white border border-zinc-200 text-zinc-600 hover:border-indigo-300 hover:text-indigo-600'
+                            }`}
+                          >
+                            {pct}%{pct === 100 ? ' (Full KB)' : ''}
+                          </button>
+                        ))}
+                      </div>
+                      {kbPercentage === 100 && (
+                        <p className="text-xs text-indigo-600 mt-2 leading-snug">
+                          All 30 questions will be based on your uploaded documents. Claude will expand depth if content is limited.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            />
           </CardContent>
         </Card>
 

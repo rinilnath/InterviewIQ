@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   RefreshCw,
   Square,
+  Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -206,51 +207,45 @@ export default function History() {
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
                         {kit.status === 'generating' && (
-                          <>
-                            <Badge className="bg-indigo-100 text-indigo-700 border-0 gap-1 animate-pulse">
-                              <Loader2 className="w-3 h-3 animate-spin" /> Generating
-                            </Badge>
-                            <button
-                              onClick={(e) => { e.preventDefault(); cancelMutation.mutate(kit.id); }}
-                              disabled={cancelMutation.isPending && cancelMutation.variables === kit.id}
-                              className="flex items-center gap-1 text-xs text-rose-600 hover:text-rose-800 font-medium px-1.5 py-0.5 rounded border border-rose-200 hover:bg-rose-50 transition-colors"
-                            >
-                              <Square className="w-3 h-3 fill-current" /> Stop
-                            </button>
-                          </>
+                          <Badge className="bg-indigo-100 text-indigo-700 border-0 gap-1 animate-pulse">
+                            <Loader2 className="w-3 h-3 animate-spin" /> Generating
+                          </Badge>
                         )}
                         {kit.status === 'cancelled' && (
-                          <>
-                            <Badge className="bg-zinc-100 text-zinc-600 border-0 gap-1">
-                              <Square className="w-3 h-3" /> Stopped
-                            </Badge>
-                            <button
-                              onClick={(e) => { e.preventDefault(); retryMutation.mutate(kit.id); }}
-                              disabled={retryMutation.isPending && retryMutation.variables === kit.id}
-                              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium px-1.5 py-0.5 rounded border border-indigo-200 hover:bg-indigo-50 transition-colors"
-                            >
-                              <RefreshCw className="w-3 h-3" /> Retry
-                            </button>
-                          </>
+                          <Badge className="bg-zinc-100 text-zinc-500 border-0 gap-1">
+                            <Square className="w-3 h-3" /> Stopped
+                          </Badge>
                         )}
                         {kit.status === 'failed' && (
-                          <>
-                            <Badge className="bg-rose-100 text-rose-700 border-0 gap-1">
-                              <AlertTriangle className="w-3 h-3" /> Failed
-                            </Badge>
-                            <button
-                              onClick={(e) => { e.preventDefault(); retryMutation.mutate(kit.id); }}
-                              disabled={retryMutation.isPending && retryMutation.variables === kit.id}
-                              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium px-1.5 py-0.5 rounded border border-indigo-200 hover:bg-indigo-50 transition-colors"
-                            >
-                              <RefreshCw className="w-3 h-3" /> Retry
-                            </button>
-                          </>
+                          <Badge className="bg-rose-100 text-rose-700 border-0 gap-1">
+                            <AlertTriangle className="w-3 h-3" /> Failed
+                          </Badge>
                         )}
                         {kit.status !== 'generating' && kit.status !== 'failed' && kit.status !== 'cancelled' && (
                           <Badge variant={kit.is_completed ? 'success' : 'warning'}>
                             {kit.is_completed ? 'Completed' : 'In Progress'}
                           </Badge>
+                        )}
+                        {/* Stop / Retry toggle button — visible only while generating or after stop/fail */}
+                        {kit.status === 'generating' && (
+                          <button
+                            onClick={(e) => { e.preventDefault(); cancelMutation.mutate(kit.id); }}
+                            disabled={cancelMutation.isPending && cancelMutation.variables === kit.id}
+                            title="Stop generation"
+                            className="flex items-center justify-center w-6 h-6 rounded-full bg-rose-100 hover:bg-rose-200 text-rose-600 transition-colors shrink-0"
+                          >
+                            <Square className="w-3 h-3 fill-current" />
+                          </button>
+                        )}
+                        {(kit.status === 'cancelled' || kit.status === 'failed') && (
+                          <button
+                            onClick={(e) => { e.preventDefault(); retryMutation.mutate(kit.id); }}
+                            disabled={retryMutation.isPending && retryMutation.variables === kit.id}
+                            title="Retry generation"
+                            className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-600 transition-colors shrink-0"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                          </button>
                         )}
                         <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-indigo-400 transition-colors" />
                       </div>
@@ -258,7 +253,9 @@ export default function History() {
                   </Link>
                   <button
                     onClick={() => setDeleteId(kit.id)}
-                    className="text-zinc-300 hover:text-rose-500 transition-colors p-1 rounded"
+                    disabled={kit.status === 'generating'}
+                    title={kit.status === 'generating' ? 'Stop generation before deleting' : 'Delete kit'}
+                    className="text-zinc-300 hover:text-rose-500 transition-colors p-1 rounded disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:text-zinc-300"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
