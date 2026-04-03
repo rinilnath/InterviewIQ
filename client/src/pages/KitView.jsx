@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown, ChevronUp, Download, FileSpreadsheet,
   CheckCircle2, Save, ArrowLeft, Calendar, Layers,
-  RefreshCw, Eye, Bug, X, AlertTriangle,
+  RefreshCw, Eye, Bug, X, AlertTriangle, Square,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,7 +73,9 @@ function AnswerRenderer({ text }) {
   );
 }
 
-function FailedKitCard({ kit, onBack, onRetried }) {
+function StoppedKitCard({ kit, onBack, onRetried, variant = 'failed' }) {
+  const isCancelled = variant === 'cancelled';
+
   const retryMutation = useMutation({
     mutationFn: () => api.post(`/interview/${kit.id}/retry`),
     onSuccess: (res) => {
@@ -88,11 +90,17 @@ function FailedKitCard({ kit, onBack, onRetried }) {
       <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 transition-colors">
         <ArrowLeft className="w-4 h-4" /> Back to History
       </button>
-      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-10 flex flex-col items-center gap-4 text-center">
-        <AlertTriangle className="w-12 h-12 text-rose-400" />
+      <div className={`rounded-2xl border p-10 flex flex-col items-center gap-4 text-center ${isCancelled ? 'border-zinc-200 bg-zinc-50' : 'border-rose-200 bg-rose-50'}`}>
+        {isCancelled
+          ? <Square className="w-12 h-12 text-zinc-400" />
+          : <AlertTriangle className="w-12 h-12 text-rose-400" />}
         <div>
-          <h3 className="text-lg font-semibold text-rose-800">Generation Failed</h3>
-          <p className="text-sm text-rose-600 mt-1 max-w-md">{kit.error_message || 'An error occurred during kit generation.'}</p>
+          <h3 className={`text-lg font-semibold ${isCancelled ? 'text-zinc-700' : 'text-rose-800'}`}>
+            {isCancelled ? 'Generation Stopped' : 'Generation Failed'}
+          </h3>
+          <p className={`text-sm mt-1 max-w-md ${isCancelled ? 'text-zinc-500' : 'text-rose-600'}`}>
+            {kit.error_message || (isCancelled ? 'Generation was stopped by you.' : 'An error occurred during kit generation.')}
+          </p>
         </div>
         <div className="flex gap-3">
           <Button
@@ -155,6 +163,16 @@ export default function KitView() {
 
   // Clean up timers on unmount
   useEffect(() => () => stepTimers.current.forEach(clearTimeout), []);
+
+  const cancelMutation = useMutation({
+    mutationFn: () => api.post(`/interview/${id}/cancel`),
+    onSuccess: (res) => {
+      setKitData(res.data.kit);
+      queryClient.invalidateQueries(['interview', 'history']);
+      toast.success('Generation stopped', 'You can retry from this page whenever you\'re ready.');
+    },
+    onError: (err) => toast.error('Could not stop', err.response?.data?.error || 'Failed to stop generation.'),
+  });
 
   const saveMutation = useMutation({
     mutationFn: async ({ isCompleted }) => {
@@ -342,16 +360,44 @@ export default function KitView() {
             ))}
           </div>
           <Progress className="w-full max-w-xs h-1.5 [&>div]:bg-indigo-500 [&>div]:animate-pulse" value={75} />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+            className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+          >
+            {cancelMutation.isPending
+              ? <><Square className="w-3.5 h-3.5 animate-pulse" /> Stopping...</>
+              : <><Square className="w-3.5 h-3.5 fill-current" /> Stop Generation</>}
+          </Button>
         </div>
       </div>
+    );
+  }
+
+  // Generation cancelled by user
+  if (kitData?.status === 'cancelled') {
+    return (
+      <StoppedKitCard
+        kit={kitData}
+        variant="cancelled"
+        onBack={() => navigate('/history')}
+        onRetried={(updatedKit) => {
+          setKitData(updatedKit);
+          queryClient.invalidateQueries(['kit', id]);
+          queryClient.invalidateQueries(['interview', 'history']);
+        }}
+      />
     );
   }
 
   // Generation failed — show error with retry option
   if (kitData?.status === 'failed') {
     return (
-      <FailedKitCard
+      <StoppedKitCard
         kit={kitData}
+        variant="failed"
         onBack={() => navigate('/history')}
         onRetried={(updatedKit) => {
           setKitData(updatedKit);

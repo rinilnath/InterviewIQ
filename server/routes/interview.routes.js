@@ -53,6 +53,18 @@ async function runGenerationJob(kitId, params) {
     const startedAt = Date.now();
     const kitOutput = await Promise.race([generateInterviewKit(params), timeout]);
     const generationSeconds = Math.round((Date.now() - startedAt) / 1000);
+
+    // Check if user cancelled the job while Claude was running
+    const { data: current } = await supabase
+      .from('interview_kits')
+      .select('status')
+      .eq('id', kitId)
+      .single();
+    if (current?.status === 'cancelled') {
+      console.log(`[job] Kit ${kitId} was cancelled — discarding completed output`);
+      return;
+    }
+
     const { error } = await supabase
       .from('interview_kits')
       .update({
@@ -66,6 +78,15 @@ async function runGenerationJob(kitId, params) {
     if (error) throw error;
     console.log(`[job] Kit ${kitId} completed: ${kitOutput.kit_title}`);
   } catch (err) {
+    // Don't overwrite a user-initiated cancellation with a failure status
+    const { data: current } = await supabase
+      .from('interview_kits')
+      .select('status')
+      .eq('id', kitId)
+      .single()
+      .catch(() => ({ data: null }));
+    if (current?.status === 'cancelled') return;
+
     const userMessage = categorizeError(err);
     console.error(`[job] Kit ${kitId} failed:`, err.message);
     await supabase
@@ -469,6 +490,46 @@ router.patch('/:id/scores', async (req, res) => {
   }
 });
 
+// POST /api/interview/:id/cancel — user-initiated stop of an in-progress generation
+router.post('/:id/cancel', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('interview_kits')
+      .select('id, generated_by, status, deleted_at')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !existing) return res.status(404).json({ error: 'Interview kit not found' });
+    if (req.user.role !== 'admin' && existing.generated_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (existing.status !== 'generating') {
+      return res.status(400).json({ error: `Kit is not generating (current: ${existing.status})` });
+    }
+
+    const { data: updatedKit, error: updateError } = await supabase
+      .from('interview_kits')
+      .update({
+        status: 'cancelled',
+        error_message: 'Generation was stopped by you.',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    console.log(`[job] Kit ${id} cancelled by user ${req.user.id}`);
+    res.json({ kit: updatedKit });
+  } catch (err) {
+    console.error('Cancel generation error:', err);
+    res.status(500).json({ error: err.message || 'Failed to cancel generation' });
+  }
+});
+
 // POST /api/interview/:id/retry — re-run generation for a failed kit
 router.post('/:id/retry', async (req, res) => {
   try {
@@ -484,8 +545,8 @@ router.post('/:id/retry', async (req, res) => {
     if (req.user.role !== 'admin' && existing.generated_by !== req.user.id) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    if (existing.status !== 'failed') {
-      return res.status(400).json({ error: `Kit is not in a failed state (current: ${existing.status})` });
+    if (existing.status !== 'failed' && existing.status !== 'cancelled') {
+      return res.status(400).json({ error: `Kit cannot be retried (current status: ${existing.status})` });
     }
     if (existing.deleted_at) {
       return res.status(400).json({ error: 'Kit is in trash — restore it before retrying.' });
