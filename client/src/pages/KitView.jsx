@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown, ChevronUp, Download, FileSpreadsheet,
   CheckCircle2, Save, ArrowLeft, Calendar, Layers,
-  RefreshCw, Eye, EyeOff, Bug, X, AlertTriangle,
+  RefreshCw, Eye, Bug, X, AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -213,7 +213,7 @@ export default function KitView() {
       ]);
       autoTable(doc, {
         startY: y,
-        head: [['#', 'Question', 'Src', 'Strong Answer', 'Score', 'Notes']],
+        head: [['#', 'Question', 'Src', 'Expert Answer', 'Score', 'Notes']],
         body: tableData,
         styles: { fontSize: 7, cellPadding: 2 },
         headStyles: { fillColor: [79, 70, 229], textColor: 255 },
@@ -237,8 +237,7 @@ export default function KitView() {
           'Q#': q.id, Type: q.question_type || 'standard',
           Question: q.question, 'Code Snippet': q.code_snippet || '',
           Source: q.source, 'KB Label': q.kb_label || '',
-          'Weak Answer': q.weak_answer, 'Average Answer': q.average_answer,
-          'Strong Answer': q.strong_answer,
+          'Expert Answer': q.strong_answer,
           Score: q.score != null ? q.score : '', Notes: q.notes || '',
         });
       });
@@ -548,14 +547,14 @@ function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNote
                   className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700 transition-colors"
                 >
                   {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  {expanded ? 'Hide' : 'Show'} full rubric
+                  {expanded ? 'Hide' : 'Show'} notes
                 </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Full rubric */}
+        {/* Notes */}
         <AnimatePresence>
           {expanded && (
             <motion.div
@@ -565,23 +564,7 @@ function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNote
               transition={{ duration: 0.2 }}
               className="overflow-hidden"
             >
-              <div className="px-4 pb-4 ml-8 space-y-3">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="p-3 rounded-lg bg-rose-50 border border-rose-100">
-                    <p className="text-xs font-semibold text-rose-700 mb-1">Weak Answer</p>
-                    <p className="text-xs text-rose-800 leading-relaxed">{question.weak_answer}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-100">
-                    <p className="text-xs font-semibold text-amber-700 mb-1">Average Answer</p>
-                    <p className="text-xs text-amber-800 leading-relaxed">{question.average_answer}</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-100">
-                    <p className="text-xs font-semibold text-emerald-700 mb-1">Strong Answer</p>
-                    <div className="text-xs">
-                      <AnswerRenderer text={question.strong_answer} />
-                    </div>
-                  </div>
-                </div>
+              <div className="px-4 pb-4 ml-8">
                 <Textarea
                   placeholder="Notes for this question..."
                   className="text-xs min-h-[60px] resize-none"

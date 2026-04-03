@@ -79,49 +79,11 @@ const SENIORITY_CONFIG = {
   },
 };
 
-function buildPrompt({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions }) {
-  const config = SENIORITY_CONFIG[seniorityLevel];
-  if (!config) throw new Error(`Unknown seniority level: ${seniorityLevel}`);
-
-  const { questionCount, weights, calibration } = config;
-  const techStackStr = Array.isArray(techStack) ? techStack.join(', ') : techStack;
-
-  const sectionWeightsStr = Object.entries(weights)
-    .map(([section, weight]) => `  - ${section}: ${weight}%`)
-    .join('\n');
-
-  const kbCount = knowledgeBaseDocs && knowledgeBaseDocs.length > 0
-    ? Math.round(questionCount * 0.25)
-    : 0;
-  const aiCount = questionCount - kbCount;
-
-  let prompt = `Generate a comprehensive interview kit for the following role.
-
-JOB DESCRIPTION:
-${jdText}
-
-SENIORITY LEVEL: ${seniorityLevel}
-TECH STACK: ${techStackStr}
-TOTAL QUESTIONS REQUIRED: ${questionCount}
-${customExpectations ? `CUSTOM EXPECTATIONS:\n${customExpectations}\n` : ''}
-SECTION WEIGHT DISTRIBUTION:
-${sectionWeightsStr}
-
-COMPLEXITY CALIBRATION:
-${calibration}
-
-QUESTION SOURCING:
-${kbCount > 0
-  ? `- Generate ${aiCount} questions (75%) yourself based on seniority, JD, and tech stack. Tag these with source: "AI" and kb_label: null.
-- Select exactly ${kbCount} questions (25%) from the knowledge base context provided below. Tag these with source: "KB" and include the document label in kb_label.`
-  : `- Generate all ${questionCount} questions yourself based on seniority, JD, and tech stack. Tag all with source: "AI" and kb_label: null.`
-}
-${isRegenerate && previousQuestions && previousQuestions.length > 0 ? `
-REGENERATION INSTRUCTION (CRITICAL):
-This is a regeneration request. You MUST generate completely fresh questions. Do NOT reuse, rephrase, or repeat any of the following previously generated questions:
-${previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
-Every single question in this output must be brand new and distinct from the above list.
-` : ''}
+// ---------------------------------------------------------------------------
+// STATIC_RULES — identical on every request; sent with cache_control so the
+// Anthropic API caches this block and skips re-processing it on regenerations.
+// ---------------------------------------------------------------------------
+const STATIC_RULES = `
 CORE TECHNOLOGY SECTION RULES (CRITICAL):
 - All "Core Technology" questions MUST be hands-on and practical — ask the candidate to write code, debug a snippet, explain their implementation approach, or reason through a real technical problem
 - Do NOT generate theoretical definitions, history lessons, or "what is X" questions for Core Technology
@@ -136,25 +98,31 @@ PROBLEM SOLVING SECTION RULES (CRITICAL):
 - The question text for fix_the_code should be: "Find and fix the bug(s) in the following code:"
 - Remaining Problem Solving questions should be algorithmic or design problem questions
 
-STRONG ANSWER FORMAT RULES (CRITICAL):
-- Write strong_answer in FIRST PERSON, as if you are the expert candidate answering in the actual interview
-- Sound confident, technically sharp, and natural — like a distinguished senior professional speaking
-- The answer is displayed in a dedicated side panel and will be scrollable — so write with DEPTH and EDUCATIONAL RICHNESS, not brevity
-- STRUCTURE your answer like a mini-lesson: (1) crisp one-line definition of the core concept if applicable, (2) explain the underlying mechanism or "why it works this way", (3) show HOW you apply it with a code example or real scenario, (4) share a nuance, pitfall, or trade-off a practitioner would know
-- Aim for 150-300 words of prose PLUS a code block where relevant — this is a learning resource, not a tweet
-- When code is needed, use markdown code fences with the language tag: \`\`\`javascript\\n...\\n\`\`\` — show a complete, runnable and meaningful example (not pseudo-code), with inline comments explaining key lines
-- Do NOT use rubric language like "A strong candidate would..." or "The ideal answer is..." — speak directly as the candidate
-- For fix_the_code questions: (1) name each bug and its location, (2) explain in 1-2 sentences WHY each bug causes the failure (the root cause concept), (3) show the fully corrected code in a fenced block with comments marking the fixes, (4) add a brief note on the underlying concept so the reader learns from it
-- Start with first-person framing: "So the key concept here is...", "Let me walk through how I'd approach this...", "The thing that trips most people up here is..."
-- Use markdown bold (**term**) to highlight key technical terms when defining them
+ANSWER FORMAT RULES — TOKEN BUDGET (CRITICAL, follow exactly):
+- strong_answer ONLY — do NOT generate weak_answer or average_answer fields at all
+- strong_answer: Write in FIRST PERSON as the expert candidate. Structure as a mini-lesson:
+  1. One-line crisp definition of the core concept (use **bold** for key terms)
+  2. Explain the underlying mechanism — why it works this way
+  3. Show HOW you apply it: a focused code block OR a concrete real-world scenario
+  4. One sentence on a practitioner pitfall or trade-off
+  Target: 100-150 words of prose. When code is needed add ONE fenced block (use correct language tag, e.g. \`\`\`python) with inline comments on key lines. Do NOT exceed 200 words total prose.
+- Do NOT use rubric language ("A strong candidate would...") — speak directly as the candidate
+- For fix_the_code strong_answer: name each bug + location, explain root-cause concept in 1-2 sentences, show corrected code in a fenced block with fix comments
+- Voice: "So the key concept here is...", "Let me walk through how I'd approach this...", "The thing that trips most people up here is..."
 
 OUTPUT REQUIREMENTS:
 - Distribute questions proportionally across sections based on weight percentages
-- SECTION ORDERING (CRITICAL): The "Core Technology" section MUST always be the FIRST element in the sections array. All other sections follow after it in any order.
+- SECTION ORDERING (CRITICAL): "Core Technology" section MUST be the FIRST element in the sections array
 - score must be null, notes must be empty string ""
 - kit_title should be a descriptive title based on the JD and seniority level
 - question_type must be "fix_the_code" or "standard"
 - code_snippet is required for fix_the_code questions, must be null for standard questions
+
+ANSWER QUALITY REMINDERS (apply to every question without exception):
+- strong_answer must always feel like the candidate is speaking live in an interview room, not reading from a textbook
+- If the tech stack is Python, use Python code fences; if JavaScript, use JavaScript; always match the language to the stack
+- Do not repeat the question text verbatim inside any answer field
+- For fix_the_code questions the code_snippet field is REQUIRED and must be a realistic, real-world-looking snippet with intentional bugs only
 
 REQUIRED JSON OUTPUT SCHEMA (return ONLY this JSON, no other text):
 {
@@ -174,8 +142,6 @@ REQUIRED JSON OUTPUT SCHEMA (return ONLY this JSON, no other text):
           "code_snippet": "string | null",
           "source": "AI" | "KB",
           "kb_label": "string | null",
-          "weak_answer": "string",
-          "average_answer": "string",
           "strong_answer": "string",
           "score": null,
           "notes": ""
@@ -185,14 +151,63 @@ REQUIRED JSON OUTPUT SCHEMA (return ONLY this JSON, no other text):
   ]
 }`;
 
+// ---------------------------------------------------------------------------
+// buildDynamicContext — small per-request block (JD, seniority, regen list).
+// This is NOT cached because it changes with every request.
+// ---------------------------------------------------------------------------
+function buildDynamicContext({ jdText, seniorityLevel, techStack, customExpectations, knowledgeBaseDocs, isRegenerate, previousQuestions }) {
+  const config = SENIORITY_CONFIG[seniorityLevel];
+  if (!config) throw new Error(`Unknown seniority level: ${seniorityLevel}`);
+
+  const { questionCount, weights, calibration } = config;
+  const techStackStr = Array.isArray(techStack) ? techStack.join(', ') : techStack;
+
+  const sectionWeightsStr = Object.entries(weights)
+    .map(([section, weight]) => `  - ${section}: ${weight}%`)
+    .join('\n');
+
+  const kbCount = knowledgeBaseDocs && knowledgeBaseDocs.length > 0
+    ? Math.round(questionCount * 0.25)
+    : 0;
+  const aiCount = questionCount - kbCount;
+
+  let ctx = `Generate a comprehensive interview kit for the following role.
+
+JOB DESCRIPTION:
+${jdText}
+
+SENIORITY LEVEL: ${seniorityLevel}
+TECH STACK: ${techStackStr}
+TOTAL QUESTIONS REQUIRED: ${questionCount}
+${customExpectations ? `CUSTOM EXPECTATIONS:\n${customExpectations}\n` : ''}SECTION WEIGHT DISTRIBUTION:
+${sectionWeightsStr}
+
+COMPLEXITY CALIBRATION:
+${calibration}
+
+QUESTION SOURCING:
+${kbCount > 0
+    ? `- Generate ${aiCount} questions (75%) yourself. Tag source: "AI", kb_label: null.\n- Select exactly ${kbCount} questions (25%) from the knowledge base below. Tag source: "KB", kb_label: <document label>.`
+    : `- Generate all ${questionCount} questions yourself. Tag all source: "AI", kb_label: null.`
+  }`;
+
+  if (isRegenerate && previousQuestions && previousQuestions.length > 0) {
+    ctx += `\n\nREGENERATION INSTRUCTION (CRITICAL): Generate completely fresh questions. Do NOT reuse, rephrase, or repeat any of these previously generated questions:\n${previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}\nEvery question in this output must be brand new.`;
+  }
+
   if (knowledgeBaseDocs && knowledgeBaseDocs.length > 0) {
-    prompt += `\n\nKNOWLEDGE BASE CONTEXT:\n`;
+    ctx += `\n\nKNOWLEDGE BASE CONTEXT:`;
     knowledgeBaseDocs.forEach((doc) => {
-      prompt += `\n--- Document: ${doc.label} (Type: ${doc.document_type}) ---\n${doc.extracted_text}\n`;
+      ctx += `\n--- Document: ${doc.label} (Type: ${doc.document_type}) ---\n${doc.extracted_text}\n`;
     });
   }
 
-  return prompt;
+  return ctx;
 }
 
-module.exports = { buildPrompt, SENIORITY_CONFIG };
+// Kept for any callers that use the single-string API
+function buildPrompt(args) {
+  return `${buildDynamicContext(args)}\n${STATIC_RULES}`;
+}
+
+module.exports = { buildPrompt, buildDynamicContext, STATIC_RULES, SENIORITY_CONFIG };
