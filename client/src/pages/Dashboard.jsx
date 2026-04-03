@@ -35,6 +35,14 @@ export default function Dashboard() {
     },
   });
 
+  const { data: statsData, isLoading: statsLoading } = useQuery({
+    queryKey: ['interview', 'stats'],
+    queryFn: async () => {
+      const res = await api.get('/interview/stats');
+      return res.data;
+    },
+  });
+
   const { data: adminData, isLoading: adminLoading } = useQuery({
     queryKey: ['admin', 'dashboard'],
     queryFn: async () => {
@@ -71,15 +79,17 @@ export default function Dashboard() {
     onError: () => toast.error('Failed', 'Could not delete all kits.'),
   });
 
+  const totalForDialog = statsData?.total ?? 0;
+
   const kits = historyData?.kits || [];
-  const total = historyData?.total || 0;
-  const completed = kits.filter((k) => k.is_completed).length;
-  const pending = kits.filter((k) => !k.is_completed).length;
+  const total = statsData?.total ?? (statsLoading ? '—' : 0);
+  const completed = statsData?.completed ?? (statsLoading ? '—' : 0);
+  const inProgress = statsData?.inProgress ?? (statsLoading ? '—' : 0);
 
   const stats = [
-    { label: 'Total Kits', value: isLoading ? '—' : total, icon: FileText, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-    { label: 'Completed', value: isLoading ? '—' : completed, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Pending', value: isLoading ? '—' : pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: 'Total Kits', value: statsLoading ? '—' : total, icon: FileText, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: 'Completed', value: statsLoading ? '—' : completed, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: 'In Progress', value: statsLoading ? '—' : inProgress, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
     ...(user?.role === 'admin' ? [
       { label: 'Total Users', value: adminLoading ? '—' : adminData?.userCount, icon: Users, color: 'text-violet-600', bg: 'bg-violet-50' },
       { label: 'KB Documents', value: adminLoading ? '—' : adminData?.docCount, icon: BookOpen, color: 'text-sky-600', bg: 'bg-sky-50' },
@@ -117,7 +127,7 @@ export default function Dashboard() {
           <p className="text-sm text-zinc-500 mt-0.5">Here's your interview management overview.</p>
         </div>
         <div className="hidden sm:flex items-center gap-2">
-          {total > 0 && (
+          {statsData?.total > 0 && (
             <Button
               variant="outline"
               size="sm"
@@ -213,7 +223,7 @@ export default function Dashboard() {
           <DialogHeader>
             <DialogTitle>Move All Kits to Trash?</DialogTitle>
             <DialogDescription>
-              All {total} interview kit{total !== 1 ? 's' : ''} will be moved to Trash.
+              All {totalForDialog} interview kit{totalForDialog !== 1 ? 's' : ''} will be moved to Trash.
               You can recover them within 30 days from the Trash folder.
             </DialogDescription>
           </DialogHeader>
