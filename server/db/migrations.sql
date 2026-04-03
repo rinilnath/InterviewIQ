@@ -69,6 +69,9 @@ ALTER TABLE interview_kits
 ALTER TABLE interview_kits ALTER COLUMN output_json DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_interview_kits_status ON interview_kits(status);
+
+-- Store how long generation took so it can be shown in the kit header
+ALTER TABLE interview_kits ADD COLUMN IF NOT EXISTS generation_seconds INTEGER;
 -- ───────────────────────────────────────────────────────────────────────────
 
 -- Seed default admin

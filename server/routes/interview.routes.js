@@ -21,13 +21,16 @@ router.use(verifyToken);
 // Called after HTTP response is sent. Never throws — failures written to DB.
 async function runGenerationJob(kitId, params) {
   try {
+    const startedAt = Date.now();
     const kitOutput = await generateInterviewKit(params);
+    const generationSeconds = Math.round((Date.now() - startedAt) / 1000);
     const { error } = await supabase
       .from('interview_kits')
       .update({
         status: 'completed',
         kit_title: kitOutput.kit_title,
         output_json: kitOutput,
+        generation_seconds: generationSeconds,
         updated_at: new Date().toISOString(),
       })
       .eq('id', kitId);
