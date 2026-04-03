@@ -136,15 +136,19 @@ PROBLEM SOLVING SECTION RULES (CRITICAL):
 - The question text for fix_the_code should be: "Find and fix the bug(s) in the following code:"
 - Remaining Problem Solving questions should be algorithmic or design problem questions
 
+WEAK AND AVERAGE ANSWER FORMAT RULES (CRITICAL — keep these SHORT to conserve output tokens):
+- weak_answer: ONE sentence only — describe what a poor/unprepared candidate would say (vague, wrong, or missing key point)
+- average_answer: ONE to TWO sentences only — describe what a mediocre candidate would say (partially correct, missing depth or nuance)
+
 STRONG ANSWER FORMAT RULES (CRITICAL):
 - Write strong_answer in FIRST PERSON, as if you are the expert candidate answering in the actual interview
 - Sound confident, technically sharp, and natural — like a distinguished senior professional speaking
-- The answer is displayed in a dedicated side panel and will be scrollable — so write with DEPTH and EDUCATIONAL RICHNESS, not brevity
+- The answer is displayed in a dedicated scrollable side panel — write with DEPTH and EDUCATIONAL RICHNESS
 - STRUCTURE your answer like a mini-lesson: (1) crisp one-line definition of the core concept if applicable, (2) explain the underlying mechanism or "why it works this way", (3) show HOW you apply it with a code example or real scenario, (4) share a nuance, pitfall, or trade-off a practitioner would know
-- Aim for 150-300 words of prose PLUS a code block where relevant — this is a learning resource, not a tweet
-- When code is needed, use markdown code fences with the language tag: \`\`\`javascript\\n...\\n\`\`\` — show a complete, runnable and meaningful example (not pseudo-code), with inline comments explaining key lines
-- Do NOT use rubric language like "A strong candidate would..." or "The ideal answer is..." — speak directly as the candidate
-- For fix_the_code questions: (1) name each bug and its location, (2) explain in 1-2 sentences WHY each bug causes the failure (the root cause concept), (3) show the fully corrected code in a fenced block with comments marking the fixes, (4) add a brief note on the underlying concept so the reader learns from it
+- Aim for 100-180 words of prose PLUS a focused code block where relevant — prioritise depth of insight over word count
+- When code is needed, use markdown code fences with the language tag: \`\`\`python\\n...\\n\`\`\` (use the correct language) — show a complete, meaningful example with inline comments on key lines
+- Do NOT use rubric language like "A strong candidate would..." — speak directly as the candidate
+- For fix_the_code questions: (1) name each bug and its location, (2) explain in 1-2 sentences WHY it causes the failure, (3) show the fully corrected code in a fenced block with fix comments, (4) add one sentence on the underlying concept
 - Start with first-person framing: "So the key concept here is...", "Let me walk through how I'd approach this...", "The thing that trips most people up here is..."
 - Use markdown bold (**term**) to highlight key technical terms when defining them
 
