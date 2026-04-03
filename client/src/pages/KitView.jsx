@@ -7,6 +7,7 @@ import {
   ChevronDown, ChevronUp, Download, FileSpreadsheet,
   CheckCircle2, Save, ArrowLeft, Calendar, Layers,
   RefreshCw, Eye, Bug, X, AlertTriangle, Square,
+  Globe, Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -172,6 +173,20 @@ export default function KitView() {
       toast.success('Generation stopped', 'You can retry from this page whenever you\'re ready.');
     },
     onError: (err) => toast.error('Could not stop', err.response?.data?.error || 'Failed to stop generation.'),
+  });
+
+  const shareMutation = useMutation({
+    mutationFn: () => api.post(`/interview/${id}/share`),
+    onSuccess: (res) => {
+      setKitData(res.data.kit);
+      queryClient.invalidateQueries(['interview', 'shared']);
+      const shared = res.data.kit.is_shared;
+      toast.success(
+        shared ? 'Kit shared' : 'Kit made private',
+        shared ? 'Now visible in Shared Kits for all users.' : 'Only visible to you.'
+      );
+    },
+    onError: (err) => toast.error('Could not update sharing', err.response?.data?.error || 'Please try again.'),
   });
 
   const saveMutation = useMutation({
@@ -483,9 +498,24 @@ export default function KitView() {
       <div className="space-y-2">
         <div className="flex items-start justify-between gap-4">
           <h2 className="text-xl font-semibold text-zinc-900 leading-snug">{kit.kit_title}</h2>
-          <Badge variant={kitData.is_completed ? 'success' : 'warning'}>
-            {kitData.is_completed ? 'Completed' : 'In Progress'}
-          </Badge>
+          <div className="flex items-center gap-2 shrink-0">
+            <Badge variant={kitData.is_completed ? 'success' : 'warning'}>
+              {kitData.is_completed ? 'Completed' : 'In Progress'}
+            </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => shareMutation.mutate()}
+              disabled={shareMutation.isPending}
+              className={kitData.is_shared
+                ? 'h-7 px-2 text-xs border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                : 'h-7 px-2 text-xs border-zinc-200 text-zinc-500 hover:bg-zinc-50'}
+            >
+              {kitData.is_shared
+                ? <><Globe className="w-3 h-3" /> Shared</>
+                : <><Lock className="w-3 h-3" /> Private</>}
+            </Button>
+          </div>
         </div>
         <div className="flex flex-wrap gap-4 text-sm text-zinc-500">
           <span className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" />{kit.seniority}</span>
@@ -530,6 +560,14 @@ export default function KitView() {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* Bottom back link */}
+      <button
+        onClick={() => navigate('/history')}
+        className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-700 transition-colors mt-2"
+      >
+        <ArrowLeft className="w-4 h-4" /> Back to History
+      </button>
 
       {/* Sticky Bottom Bar */}
       <div className="fixed bottom-0 left-0 right-0 md:left-64 z-30 bg-white border-t border-zinc-200 shadow-lg">

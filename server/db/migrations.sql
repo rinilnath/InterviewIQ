@@ -91,6 +91,17 @@ CREATE INDEX IF NOT EXISTS idx_interview_kits_deleted_at
   WHERE deleted_at IS NOT NULL;
 -- ───────────────────────────────────────────────────────────────────────────
 
+-- ─── Shared Kits (v1.4.0) ─────────────────────────────────────────────────
+-- Completed kits can be published org-wide by toggling is_shared.
+-- Shared kits are visible to all users on the /shared page.
+ALTER TABLE interview_kits
+  ADD COLUMN IF NOT EXISTS is_shared BOOLEAN NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_interview_kits_shared
+  ON interview_kits(created_at DESC)
+  WHERE is_shared = true AND deleted_at IS NULL AND status = 'completed';
+-- ───────────────────────────────────────────────────────────────────────────
+
 -- Seed default admin
 -- Password: Admin@123
 INSERT INTO users (name, email, password_hash, role)
