@@ -524,12 +524,12 @@ router.patch('/:id/scores', async (req, res) => {
 
     const { data: existing, error: fetchError } = await supabase
       .from('interview_kits')
-      .select('id, generated_by, status, deleted_at')
+      .select('id, generated_by, status, deleted_at, is_shared')
       .eq('id', id)
       .single();
 
     if (fetchError || !existing) return res.status(404).json({ error: 'Interview kit not found' });
-    if (req.user.role !== 'admin' && existing.generated_by !== req.user.id) {
+    if (req.user.role !== 'admin' && existing.generated_by !== req.user.id && !existing.is_shared) {
       return res.status(403).json({ error: 'Access denied' });
     }
     if (existing.status === 'generating') {

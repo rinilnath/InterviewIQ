@@ -7,7 +7,7 @@ import {
   ChevronDown, ChevronUp, Download, FileSpreadsheet,
   CheckCircle2, Save, ArrowLeft, Calendar, Layers,
   RefreshCw, Eye, Bug, X, AlertTriangle, Square,
-  Globe, Lock,
+  Globe, Lock, RotateCcw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -130,6 +130,7 @@ export default function KitView() {
   const queryClient = useQueryClient();
   const [kitData, setKitData] = useState(null);
   const [showRegenerateConfirm, setShowRegenerateConfirm] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [answerPanel, setAnswerPanel] = useState({ open: false, question: null });
   const stepTimers = useRef([]);
 
@@ -274,6 +275,26 @@ export default function KitView() {
       },
     }));
   }, []);
+
+  const resetMutation = useMutation({
+    mutationFn: () => {
+      const clearedJson = {
+        ...kitData.output_json,
+        sections: kitData.output_json.sections.map((s) => ({
+          ...s,
+          questions: s.questions.map((q) => ({ ...q, score: null, notes: '' })),
+        })),
+      };
+      return api.patch(`/interview/${id}/scores`, { output_json: clearedJson, is_completed: false });
+    },
+    onSuccess: (res) => {
+      setKitData(res.data.kit);
+      queryClient.invalidateQueries(['kit', id]);
+      setShowResetConfirm(false);
+      toast.success('Scores reset', 'All scores and notes have been cleared.');
+    },
+    onError: () => toast.error('Reset failed', 'Could not clear scores.'),
+  });
 
   const exportPDF = () => {
     if (!kitData) return;
@@ -588,6 +609,16 @@ export default function KitView() {
             <RefreshCw className={cn('w-4 h-4', isRegenerating && 'animate-spin')} />
             {isRegenerating ? 'Regenerating...' : 'Regenerate'}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowResetConfirm(true)}
+            disabled={resetMutation.isPending}
+            className="border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+            title="Clear all scores and notes"
+          >
+            <RotateCcw className="w-4 h-4" /> Reset Scores
+          </Button>
           <Button variant="outline" size="sm" onClick={() => saveMutation.mutate({})} disabled={saveMutation.isPending}>
             <Save className="w-4 h-4" /> Save
           </Button>
@@ -621,6 +652,30 @@ export default function KitView() {
               onClick={() => { setShowRegenerateConfirm(false); regenerateMutation.mutate(); }}
             >
               <RefreshCw className="w-4 h-4" /> Yes, Regenerate
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset scores confirmation */}
+      <Dialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset All Scores?</DialogTitle>
+            <DialogDescription>
+              This will clear every score and note recorded on this kit and mark it as In Progress.
+              This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetConfirm(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => resetMutation.mutate()}
+              disabled={resetMutation.isPending}
+            >
+              <RotateCcw className="w-4 h-4" />
+              {resetMutation.isPending ? 'Resetting...' : 'Yes, Reset Scores'}
             </Button>
           </DialogFooter>
         </DialogContent>
