@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
@@ -15,7 +15,7 @@ import { useAuthStore } from '@/store/authStore';
 import { Badge } from '@/components/ui/badge';
 import api from '@/lib/api';
 import { toast } from '@/hooks/useToast';
-import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -33,11 +33,13 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const queryClient = useQueryClient();
 
   const handleLogout = async () => {
     try {
       await api.post('/auth/logout');
     } catch (_) {}
+    queryClient.clear();
     logout();
     navigate('/login');
   };

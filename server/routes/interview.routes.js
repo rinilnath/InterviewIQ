@@ -20,10 +20,38 @@ const generateLimiter = rateLimit({
 router.use(verifyToken);
 
 // ─── Background generation job ────────────────────────────────────────────
+const GENERATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function categorizeError(err) {
+  const msg = err.message || '';
+  if (err.status === 529 || msg.includes('overloaded')) {
+    return 'Claude AI is currently overloaded. Please retry in a few minutes.';
+  }
+  if (err.status === 401 || err.status === 403 || msg.includes('authentication') || msg.includes('API key')) {
+    return 'AI service authentication error. Please contact support.';
+  }
+  if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('ETIMEDOUT')) {
+    return 'Generation timed out after 5 minutes. Please retry — Claude may be under heavy load.';
+  }
+  if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') || msg.includes('network')) {
+    return 'Network error connecting to AI service. Check your connection and retry.';
+  }
+  if (msg.includes('supabase') || msg.includes('database') || msg.includes('PostgreSQL')) {
+    return 'Database error while saving results. Please retry — your data is safe.';
+  }
+  if (msg.includes('JSON') || msg.includes('parse')) {
+    return 'AI returned an unexpected response format. Please retry — this is usually transient.';
+  }
+  return err.message || 'Generation failed. Please retry.';
+}
+
 async function runGenerationJob(kitId, params) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(Object.assign(new Error('timed out'), { message: 'timeout' })), GENERATION_TIMEOUT_MS)
+  );
   try {
     const startedAt = Date.now();
-    const kitOutput = await generateInterviewKit(params);
+    const kitOutput = await Promise.race([generateInterviewKit(params), timeout]);
     const generationSeconds = Math.round((Date.now() - startedAt) / 1000);
     const { error } = await supabase
       .from('interview_kits')
@@ -38,12 +66,32 @@ async function runGenerationJob(kitId, params) {
     if (error) throw error;
     console.log(`[job] Kit ${kitId} completed: ${kitOutput.kit_title}`);
   } catch (err) {
+    const userMessage = categorizeError(err);
     console.error(`[job] Kit ${kitId} failed:`, err.message);
     await supabase
       .from('interview_kits')
-      .update({ status: 'failed', error_message: err.message || 'Generation failed', updated_at: new Date().toISOString() })
+      .update({ status: 'failed', error_message: userMessage, updated_at: new Date().toISOString() })
       .eq('id', kitId)
       .catch((e) => console.error('[job] Could not write failure status:', e.message));
+  }
+}
+
+// ─── Startup recovery: mark any stuck 'generating' kits as failed ──────────
+async function recoverStuckGenerations() {
+  const { data, error } = await supabase
+    .from('interview_kits')
+    .update({
+      status: 'failed',
+      error_message: 'The server was restarted while this kit was generating. Please use Retry to regenerate.',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('status', 'generating')
+    .is('deleted_at', null)
+    .select('id');
+  if (error) {
+    console.error('[startup] Could not recover stuck generations:', error.message);
+  } else if (data?.length > 0) {
+    console.log(`[startup] Marked ${data.length} stuck kit(s) as failed.`);
   }
 }
 
@@ -62,6 +110,9 @@ async function cleanupExpiredTrash() {
 // Run cleanup once at startup, then every 24 h
 cleanupExpiredTrash();
 setInterval(cleanupExpiredTrash, 24 * 60 * 60 * 1000);
+
+// Recover any kits stuck in 'generating' from before the last server start
+recoverStuckGenerations();
 
 // ─────────────────────────────────────────────────────────────────────────
 // ROUTES — ordered so named paths (/history, /trash/*) come before /:id
@@ -331,6 +382,28 @@ router.delete('/all', async (req, res) => {
   }
 });
 
+// GET /api/interview/stats — accurate counts for dashboard
+router.get('/stats', async (req, res) => {
+  try {
+    let baseQuery = supabase
+      .from('interview_kits')
+      .select('is_completed', { count: 'exact' })
+      .is('deleted_at', null);
+    if (req.user.role !== 'admin') baseQuery = baseQuery.eq('generated_by', req.user.id);
+
+    const { data, count: total, error } = await baseQuery;
+    if (error) throw error;
+
+    const completed = (data || []).filter((k) => k.is_completed).length;
+    const inProgress = (data || []).filter((k) => !k.is_completed).length;
+
+    res.json({ total: total || 0, completed, inProgress });
+  } catch (err) {
+    console.error('Stats error:', err);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
 // GET /api/interview/:id
 router.get('/:id', async (req, res) => {
   try {
@@ -393,6 +466,60 @@ router.patch('/:id/scores', async (req, res) => {
   } catch (err) {
     console.error('Update scores error:', err);
     res.status(500).json({ error: 'Failed to update scores' });
+  }
+});
+
+// POST /api/interview/:id/retry — re-run generation for a failed kit
+router.post('/:id/retry', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('interview_kits')
+      .select('id, generated_by, status, jd_text, seniority_level, tech_stack, custom_expectations, deleted_at')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !existing) return res.status(404).json({ error: 'Interview kit not found' });
+    if (req.user.role !== 'admin' && existing.generated_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (existing.status !== 'failed') {
+      return res.status(400).json({ error: `Kit is not in a failed state (current: ${existing.status})` });
+    }
+    if (existing.deleted_at) {
+      return res.status(400).json({ error: 'Kit is in trash — restore it before retrying.' });
+    }
+
+    const { data: updatedKit, error: updateError } = await supabase
+      .from('interview_kits')
+      .update({
+        status: 'generating',
+        error_message: null,
+        output_json: null,
+        kit_title: `Generating — ${existing.seniority_level}`,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    res.json({ kit: updatedKit });
+
+    runGenerationJob(id, {
+      jdText: existing.jd_text,
+      seniorityLevel: existing.seniority_level,
+      techStack: existing.tech_stack,
+      customExpectations: existing.custom_expectations,
+      knowledgeBaseDocs: [],
+      isRegenerate: false,
+      previousQuestions: [],
+    });
+  } catch (err) {
+    console.error('Retry generation error:', err);
+    res.status(500).json({ error: err.message || 'Failed to retry generation' });
   }
 });
 

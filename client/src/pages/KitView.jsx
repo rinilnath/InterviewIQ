@@ -73,6 +73,48 @@ function AnswerRenderer({ text }) {
   );
 }
 
+function FailedKitCard({ kit, onBack, onRetried }) {
+  const retryMutation = useMutation({
+    mutationFn: () => api.post(`/interview/${kit.id}/retry`),
+    onSuccess: (res) => {
+      toast.success('Retrying generation', 'Kit generation has been restarted.');
+      onRetried(res.data.kit);
+    },
+    onError: (err) => toast.error('Retry failed', err.response?.data?.error || 'Could not restart generation.'),
+  });
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-5">
+      <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 transition-colors">
+        <ArrowLeft className="w-4 h-4" /> Back to History
+      </button>
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-10 flex flex-col items-center gap-4 text-center">
+        <AlertTriangle className="w-12 h-12 text-rose-400" />
+        <div>
+          <h3 className="text-lg font-semibold text-rose-800">Generation Failed</h3>
+          <p className="text-sm text-rose-600 mt-1 max-w-md">{kit.error_message || 'An error occurred during kit generation.'}</p>
+        </div>
+        <div className="flex gap-3">
+          <Button
+            onClick={() => retryMutation.mutate()}
+            disabled={retryMutation.isPending}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white"
+          >
+            {retryMutation.isPending ? (
+              <><RefreshCw className="w-4 h-4 animate-spin" /> Retrying...</>
+            ) : (
+              <><RefreshCw className="w-4 h-4" /> Retry Generation</>
+            )}
+          </Button>
+          <Button variant="outline" onClick={onBack} className="border-zinc-300 text-zinc-600">
+            Back to History
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function KitView() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -305,24 +347,18 @@ export default function KitView() {
     );
   }
 
-  // Generation failed — show error with option to go back and retry
+  // Generation failed — show error with retry option
   if (kitData?.status === 'failed') {
     return (
-      <div className="max-w-4xl mx-auto space-y-5">
-        <button onClick={() => navigate('/history')} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> Back to History
-        </button>
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-10 flex flex-col items-center gap-4 text-center">
-          <AlertTriangle className="w-12 h-12 text-rose-400" />
-          <div>
-            <h3 className="text-lg font-semibold text-rose-800">Generation Failed</h3>
-            <p className="text-sm text-rose-600 mt-1">{kitData.error_message || 'An error occurred during kit generation.'}</p>
-          </div>
-          <Button variant="outline" onClick={() => navigate('/generate')} className="border-rose-300 text-rose-700 hover:bg-rose-100">
-            Try Again
-          </Button>
-        </div>
-      </div>
+      <FailedKitCard
+        kit={kitData}
+        onBack={() => navigate('/history')}
+        onRetried={(updatedKit) => {
+          setKitData(updatedKit);
+          queryClient.invalidateQueries(['kit', id]);
+          queryClient.invalidateQueries(['interview', 'history']);
+        }}
+      />
     );
   }
 

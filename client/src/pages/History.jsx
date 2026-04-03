@@ -11,6 +11,7 @@ import {
   PlusCircle,
   Loader2,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -59,6 +60,15 @@ export default function History() {
     // Auto-poll while any kit in the list is still generating
     refetchInterval: (query) =>
       query.state.data?.kits?.some((k) => k.status === 'generating') ? 4000 : false,
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: (id) => api.post(`/interview/${id}/retry`),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['interview', 'history']);
+      toast.success('Retrying generation', 'Kit generation has been restarted.');
+    },
+    onError: (err) => toast.error('Retry failed', err.response?.data?.error || 'Could not restart generation.'),
   });
 
   const deleteMutation = useMutation({
@@ -191,9 +201,18 @@ export default function History() {
                           </Badge>
                         )}
                         {kit.status === 'failed' && (
-                          <Badge className="bg-rose-100 text-rose-700 border-0 gap-1">
-                            <AlertTriangle className="w-3 h-3" /> Failed
-                          </Badge>
+                          <>
+                            <Badge className="bg-rose-100 text-rose-700 border-0 gap-1">
+                              <AlertTriangle className="w-3 h-3" /> Failed
+                            </Badge>
+                            <button
+                              onClick={(e) => { e.preventDefault(); retryMutation.mutate(kit.id); }}
+                              disabled={retryMutation.isPending && retryMutation.variables === kit.id}
+                              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium px-1.5 py-0.5 rounded border border-indigo-200 hover:bg-indigo-50 transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" /> Retry
+                            </button>
+                          </>
                         )}
                         {kit.status !== 'generating' && kit.status !== 'failed' && (
                           <Badge variant={kit.is_completed ? 'success' : 'warning'}>
