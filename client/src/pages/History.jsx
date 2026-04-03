@@ -65,8 +65,10 @@ export default function History() {
     mutationFn: (id) => api.delete(`/interview/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries(['interview', 'history']);
-      toast.success('Deleted', 'Interview kit deleted.');
+      queryClient.invalidateQueries(['trash', 'summary']);
       setDeleteId(null);
+      // Non-intrusive: inform user they can recover from Trash
+      toast.success('Moved to Trash', 'Recover it from the Trash folder within 30 days if needed.');
     },
     onError: () => toast.error('Delete failed', 'Could not delete the kit.'),
   });

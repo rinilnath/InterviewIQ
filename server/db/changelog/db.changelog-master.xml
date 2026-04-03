@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.20.xsd">
+
+    <!--
+        InterviewIQ — Liquibase Master Changelog
+        ==========================================
+        Run order is deterministic; include files in ascending version order.
+        To apply all migrations:
+            liquibase --url=<SUPABASE_JDBC_URL> --username=postgres \
+                      --password=<DB_PASSWORD> \
+                      --changeLogFile=db/changelog/db.changelog-master.xml update
+    -->
+
+    <include file="changesets/v1.0.0__initial_schema.sql"         relativeToChangelogFile="true"/>
+    <include file="changesets/v1.1.0__async_generation_support.sql" relativeToChangelogFile="true"/>
+    <include file="changesets/v1.2.0__generation_duration.sql"     relativeToChangelogFile="true"/>
+    <include file="changesets/v1.3.0__soft_delete_trash.sql"       relativeToChangelogFile="true"/>
+
+</databaseChangeLog>
