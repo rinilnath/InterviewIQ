@@ -409,6 +409,13 @@ export default function KitView() {
           <span className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" />{kit.seniority}</span>
           <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" />{formatDateShort(kitData.created_at)}</span>
           <span className="text-xs text-zinc-400">{allQuestions.length} questions</span>
+          {kitData.generation_seconds > 0 && (
+            <span className="text-xs text-zinc-400">
+              Generated in {kitData.generation_seconds >= 60
+                ? `${Math.floor(kitData.generation_seconds / 60)}m ${kitData.generation_seconds % 60}s`
+                : `${kitData.generation_seconds}s`}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {kit.tech_stack?.map((t) => <Badge key={t} variant="outline" className="text-xs">{t}</Badge>)}

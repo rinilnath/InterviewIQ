@@ -12,6 +12,7 @@ import Dashboard from '@/pages/Dashboard';
 import GenerateKit from '@/pages/GenerateKit';
 import KitView from '@/pages/KitView';
 import History from '@/pages/History';
+import Trash from '@/pages/Trash';
 import AdminUsers from '@/pages/AdminUsers';
 import AdminDocuments from '@/pages/AdminDocuments';
 import NotFound from '@/pages/NotFound';
@@ -120,6 +121,7 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/generate" element={<GenerateKit />} />
             <Route path="/history" element={<History />} />
+            <Route path="/trash" element={<Trash />} />
             <Route path="/kit/:id" element={<KitView />} />
 
             <Route element={<AdminRoute />}>

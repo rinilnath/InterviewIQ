@@ -69,6 +69,26 @@ ALTER TABLE interview_kits
 ALTER TABLE interview_kits ALTER COLUMN output_json DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_interview_kits_status ON interview_kits(status);
+
+-- Store how long generation took so it can be shown in the kit header
+ALTER TABLE interview_kits ADD COLUMN IF NOT EXISTS generation_seconds INTEGER;
+
+-- ─── Soft delete / Trash (v1.3.0) ─────────────────────────────────────────
+-- Deletes are now soft: deleted_at is stamped, rows stay in DB for 30 days.
+-- Permanent deletion runs as lazy cleanup on GET /trash or via daily interval.
+ALTER TABLE interview_kits
+  ADD COLUMN IF NOT EXISTS deleted_at  TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS deleted_by  UUID REFERENCES users(id);
+
+-- Partial index: speeds up all active-kit list queries (history, dashboard)
+CREATE INDEX IF NOT EXISTS idx_interview_kits_active
+  ON interview_kits(generated_by, created_at DESC)
+  WHERE deleted_at IS NULL;
+
+-- Index for efficient trash expiry cleanup
+CREATE INDEX IF NOT EXISTS idx_interview_kits_deleted_at
+  ON interview_kits(deleted_at)
+  WHERE deleted_at IS NOT NULL;
 -- ───────────────────────────────────────────────────────────────────────────
 
 -- Seed default admin
