@@ -99,8 +99,7 @@ PROBLEM SOLVING SECTION RULES (CRITICAL):
 - Remaining Problem Solving questions should be algorithmic or design problem questions
 
 ANSWER FORMAT RULES — TOKEN BUDGET (CRITICAL, follow exactly):
-- weak_answer: 8-12 words MAXIMUM — a short rubric label only, e.g. "Vague; cannot explain X or Y"
-- average_answer: 10-15 words MAXIMUM — a short rubric label only, e.g. "Knows X works but misses Y nuance and edge cases"
+- strong_answer ONLY — do NOT generate weak_answer or average_answer fields at all
 - strong_answer: Write in FIRST PERSON as the expert candidate. Structure as a mini-lesson:
   1. One-line crisp definition of the core concept (use **bold** for key terms)
   2. Explain the underlying mechanism — why it works this way
@@ -120,7 +119,6 @@ OUTPUT REQUIREMENTS:
 - code_snippet is required for fix_the_code questions, must be null for standard questions
 
 ANSWER QUALITY REMINDERS (apply to every question without exception):
-- Never start weak_answer or average_answer with "The candidate..."; write the label in third person or as a descriptor phrase
 - strong_answer must always feel like the candidate is speaking live in an interview room, not reading from a textbook
 - If the tech stack is Python, use Python code fences; if JavaScript, use JavaScript; always match the language to the stack
 - Do not repeat the question text verbatim inside any answer field
@@ -144,8 +142,6 @@ REQUIRED JSON OUTPUT SCHEMA (return ONLY this JSON, no other text):
           "code_snippet": "string | null",
           "source": "AI" | "KB",
           "kb_label": "string | null",
-          "weak_answer": "string",
-          "average_answer": "string",
           "strong_answer": "string",
           "score": null,
           "notes": ""
