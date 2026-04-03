@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useGeneratingKitsStore } from '@/store/generatingKitsStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown, ChevronUp, Download, FileSpreadsheet,
@@ -83,6 +84,8 @@ export default function KitView() {
 
   const { startJob, updateJob, completeJob, failJob, clearJob, getJob } = useRegenerationStore();
   const regenJob = useRegenerationStore((s) => s.jobs[id]);
+  const { remove: removeFromGenerating } = useGeneratingKitsStore();
+  const prevStatusRef = useRef(null);
 
   const { data: fetchedKit, isLoading } = useQuery({
     queryKey: ['kit', id],
@@ -90,10 +93,22 @@ export default function KitView() {
       const res = await api.get(`/interview/${id}`);
       return res.data.kit;
     },
+    // Poll every 3 s while the kit is being generated; stop once done
+    refetchInterval: (query) =>
+      query.state.data?.status === 'generating' ? 3000 : false,
   });
 
   useEffect(() => {
-    if (fetchedKit) setKitData(fetchedKit);
+    if (!fetchedKit) return;
+    const prev = prevStatusRef.current;
+    const curr = fetchedKit.status;
+    // Kit just finished generating — clear from global watcher (prevents double toast)
+    if (prev === 'generating' && curr === 'completed') {
+      removeFromGenerating(id);
+      toast.success('Kit ready!', 'Your interview kit has been generated.');
+    }
+    prevStatusRef.current = curr;
+    setKitData(fetchedKit);
   }, [fetchedKit]);
 
   // Clean up timers on unmount
@@ -139,12 +154,10 @@ export default function KitView() {
     onSuccess: (res) => {
       stepTimers.current.forEach(clearTimeout);
       completeJob(id);
+      clearJob(id);
       queryClient.invalidateQueries(['interview', 'history']);
-      toast.success('Regenerated!', 'Fresh interview kit is ready.');
-      setTimeout(() => {
-        clearJob(id);
-        navigate(`/kit/${res.data.kit.id}`);
-      }, 600);
+      // Navigate immediately — new kit page will show generating state and poll
+      navigate(`/kit/${res.data.kit.id}`);
     },
     onError: (err) => {
       stepTimers.current.forEach(clearTimeout);
@@ -249,11 +262,74 @@ export default function KitView() {
     toast.success('Excel exported');
   };
 
-  if (isLoading || !kitData) {
+  if (isLoading && !kitData) {
     return (
       <div className="max-w-4xl mx-auto space-y-4">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  // Kit is being generated — show animated waiting screen
+  if (kitData?.status === 'generating') {
+    return (
+      <div className="max-w-4xl mx-auto space-y-5">
+        <button onClick={() => navigate('/history')} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 transition-colors">
+          <ArrowLeft className="w-4 h-4" /> Back to History
+        </button>
+        <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-10 flex flex-col items-center gap-6 text-center">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2.5, repeat: Infinity, ease: 'linear' }}
+            className="w-16 h-16 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg"
+          >
+            <RefreshCw className="w-8 h-8 text-white" />
+          </motion.div>
+          <div>
+            <h3 className="text-lg font-semibold text-indigo-900">{kitData.kit_title}</h3>
+            <p className="text-sm text-indigo-600 mt-1">
+              Claude is generating your 30-question kit — this takes about a minute.
+            </p>
+            <p className="text-xs text-indigo-400 mt-2">This page auto-updates. You can navigate away freely.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 justify-center">
+            {kitData.tech_stack?.map((t) => (
+              <Badge key={t} variant="outline" className="text-xs border-indigo-200 text-indigo-700">{t}</Badge>
+            ))}
+          </div>
+          <Progress className="w-full max-w-xs h-1.5 [&>div]:bg-indigo-500 [&>div]:animate-pulse" value={75} />
+        </div>
+      </div>
+    );
+  }
+
+  // Generation failed — show error with option to go back and retry
+  if (kitData?.status === 'failed') {
+    return (
+      <div className="max-w-4xl mx-auto space-y-5">
+        <button onClick={() => navigate('/history')} className="flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-900 transition-colors">
+          <ArrowLeft className="w-4 h-4" /> Back to History
+        </button>
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-10 flex flex-col items-center gap-4 text-center">
+          <AlertTriangle className="w-12 h-12 text-rose-400" />
+          <div>
+            <h3 className="text-lg font-semibold text-rose-800">Generation Failed</h3>
+            <p className="text-sm text-rose-600 mt-1">{kitData.error_message || 'An error occurred during kit generation.'}</p>
+          </div>
+          <Button variant="outline" onClick={() => navigate('/generate')} className="border-rose-300 text-rose-700 hover:bg-rose-100">
+            Try Again
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!kitData?.output_json) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-4">
+        <Skeleton className="h-8 w-64" />
         <Skeleton className="h-96 w-full" />
       </div>
     );

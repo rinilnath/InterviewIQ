@@ -2,27 +2,22 @@ import { useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, BrainCircuit, Sparkles, Plus, X } from 'lucide-react';
+import { Sparkles, Plus, X, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
 import api from '@/lib/api';
 import { SENIORITY_LEVELS } from '@/lib/utils';
 import { toast } from '@/hooks/useToast';
+import { useGeneratingKitsStore } from '@/store/generatingKitsStore';
 
 const schema = z.object({
   jdText: z.string().min(50, 'Job description must be at least 50 characters'),
@@ -30,14 +25,6 @@ const schema = z.object({
   customExpectations: z.string().optional(),
   useKnowledgeBase: z.boolean().default(false),
 });
-
-const GENERATION_STEPS = [
-  { label: 'Analyzing job description...', progress: 20 },
-  { label: 'Calibrating for seniority level...', progress: 40 },
-  { label: 'Building question bank...', progress: 65 },
-  { label: 'Generating scoring rubrics...', progress: 85 },
-  { label: 'Finalizing interview kit...', progress: 95 },
-];
 
 const COMMON_TECH = [
   'React', 'Node.js', 'Python', 'Java', 'TypeScript', 'AWS', 'Docker',
@@ -47,36 +34,26 @@ const COMMON_TECH = [
 
 export default function GenerateKit() {
   const navigate = useNavigate();
+  const { add: addGeneratingKit } = useGeneratingKitsStore();
   const [techStack, setTechStack] = useState([]);
   const [techInput, setTechInput] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStep, setGenerationStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    control,
-    formState: { errors },
-  } = useForm({
+  const { register, handleSubmit, control, reset, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: { useKnowledgeBase: false },
   });
 
   const addTech = (tech) => {
     const trimmed = tech.trim();
-    if (trimmed && !techStack.includes(trimmed)) {
-      setTechStack([...techStack, trimmed]);
-    }
+    if (trimmed && !techStack.includes(trimmed)) setTechStack((s) => [...s, trimmed]);
     setTechInput('');
   };
 
-  const removeTech = (tech) => setTechStack(techStack.filter((t) => t !== tech));
+  const removeTech = (tech) => setTechStack((s) => s.filter((t) => t !== tech));
 
   const handleTechKeyDown = (e) => {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      addTech(techInput);
-    }
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addTech(techInput); }
   };
 
   const onSubmit = async (data) => {
@@ -84,78 +61,32 @@ export default function GenerateKit() {
       toast.error('Tech stack required', 'Please add at least one technology.');
       return;
     }
-
-    setIsGenerating(true);
-    setGenerationStep(0);
-
-    // Progress simulation
-    const intervals = [];
-    GENERATION_STEPS.forEach((_, i) => {
-      intervals.push(
-        setTimeout(() => setGenerationStep(i), i * 2500)
-      );
-    });
-
+    setIsSubmitting(true);
     try {
-      const res = await api.post('/interview/generate', {
-        ...data,
-        techStack,
-      });
-      intervals.forEach(clearTimeout);
-      navigate(`/kit/${res.data.kit.id}`);
+      const res = await api.post('/interview/generate', { ...data, techStack });
+      const kit = res.data.kit;
+
+      // Register with global watcher so toast fires even if user navigates elsewhere
+      addGeneratingKit(kit.id, kit.kit_title);
+
+      toast.success('Generation started!', 'Your kit is being built in the background.');
+      reset();
+      setTechStack([]);
+      navigate(`/kit/${kit.id}`);
     } catch (err) {
-      intervals.forEach(clearTimeout);
-      setIsGenerating(false);
-      toast.error('Generation failed', err.response?.data?.error || 'Failed to generate kit. Please try again.');
+      toast.error('Failed to start generation', err.response?.data?.error || 'Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
-
-  if (isGenerating) {
-    const step = GENERATION_STEPS[Math.min(generationStep, GENERATION_STEPS.length - 1)];
-    return (
-      <div className="max-w-md mx-auto mt-20 text-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="space-y-6"
-        >
-          <div className="flex justify-center">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-              className="w-16 h-16 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg"
-            >
-              <BrainCircuit className="w-8 h-8 text-white" />
-            </motion.div>
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold text-zinc-900">Generating Your Interview Kit</h2>
-            <p className="text-sm text-zinc-500 mt-2">This takes 10–15 seconds. Please wait.</p>
-          </div>
-          <div className="space-y-3">
-            <Progress value={step.progress} className="h-2" />
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={step.label}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                className="text-sm text-zinc-600"
-              >
-                {step.label}
-              </motion.p>
-            </AnimatePresence>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
         <h2 className="text-xl font-semibold text-zinc-900">Generate Interview Kit</h2>
-        <p className="text-sm text-zinc-500 mt-1">Fill in the details to create a tailored interview question bank.</p>
+        <p className="text-sm text-zinc-500 mt-1">
+          Generation runs in the background — submit multiple kits and continue working freely.
+        </p>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
@@ -170,9 +101,7 @@ export default function GenerateKit() {
               className={`min-h-[180px] text-sm ${errors.jdText ? 'border-rose-400' : ''}`}
               {...register('jdText')}
             />
-            {errors.jdText && (
-              <p className="text-xs text-rose-600 mt-1">{errors.jdText.message}</p>
-            )}
+            {errors.jdText && <p className="text-xs text-rose-600 mt-1">{errors.jdText.message}</p>}
           </CardContent>
         </Card>
 
@@ -182,7 +111,6 @@ export default function GenerateKit() {
             <CardTitle className="text-base">Role Details</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Seniority */}
             <div className="space-y-1.5">
               <Label>Seniority Level</Label>
               <Controller
@@ -195,20 +123,15 @@ export default function GenerateKit() {
                     </SelectTrigger>
                     <SelectContent>
                       {SENIORITY_LEVELS.map((level) => (
-                        <SelectItem key={level} value={level}>
-                          {level}
-                        </SelectItem>
+                        <SelectItem key={level} value={level}>{level}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 )}
               />
-              {errors.seniorityLevel && (
-                <p className="text-xs text-rose-600">{errors.seniorityLevel.message}</p>
-              )}
+              {errors.seniorityLevel && <p className="text-xs text-rose-600">{errors.seniorityLevel.message}</p>}
             </div>
 
-            {/* Tech Stack */}
             <div className="space-y-2">
               <Label>Tech Stack</Label>
               <div className="flex gap-2">
@@ -219,12 +142,7 @@ export default function GenerateKit() {
                   placeholder="Type technology and press Enter..."
                   className="flex-1"
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => addTech(techInput)}
-                >
+                <Button type="button" variant="outline" size="icon" onClick={() => addTech(techInput)}>
                   <Plus className="w-4 h-4" />
                 </Button>
               </div>
@@ -238,11 +156,7 @@ export default function GenerateKit() {
                       className="flex items-center gap-1 px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full text-sm font-medium"
                     >
                       {tech}
-                      <button
-                        type="button"
-                        onClick={() => removeTech(tech)}
-                        className="hover:text-indigo-900"
-                      >
+                      <button type="button" onClick={() => removeTech(tech)} className="hover:text-indigo-900">
                         <X className="w-3 h-3" />
                       </button>
                     </motion.span>
@@ -271,7 +185,9 @@ export default function GenerateKit() {
         {/* Custom Expectations */}
         <Card className="border-zinc-200">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Additional Context <span className="text-zinc-400 font-normal text-sm">(Optional)</span></CardTitle>
+            <CardTitle className="text-base">
+              Additional Context <span className="text-zinc-400 font-normal text-sm">(Optional)</span>
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-1.5">
@@ -282,7 +198,6 @@ export default function GenerateKit() {
                 {...register('customExpectations')}
               />
             </div>
-
             <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-50 border border-zinc-200">
               <div>
                 <p className="text-sm font-medium text-zinc-900">Use Knowledge Base</p>
@@ -301,10 +216,14 @@ export default function GenerateKit() {
 
         <Button
           type="submit"
+          disabled={isSubmitting}
           className="w-full bg-indigo-600 hover:bg-indigo-700 h-11 text-base font-medium"
         >
-          <Sparkles className="w-4 h-4" />
-          Generate Interview Kit
+          {isSubmitting ? (
+            <><Loader2 className="w-4 h-4 animate-spin" /> Starting generation...</>
+          ) : (
+            <><Sparkles className="w-4 h-4" /> Generate Interview Kit</>
+          )}
         </Button>
       </form>
     </div>

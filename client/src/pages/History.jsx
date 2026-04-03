@@ -9,6 +9,8 @@ import {
   ChevronRight,
   Filter,
   PlusCircle,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -54,6 +56,9 @@ export default function History() {
       return res.data;
     },
     staleTime: 0,
+    // Auto-poll while any kit in the list is still generating
+    refetchInterval: (query) =>
+      query.state.data?.kits?.some((k) => k.status === 'generating') ? 4000 : false,
   });
 
   const deleteMutation = useMutation({
@@ -178,9 +183,21 @@ export default function History() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <Badge variant={kit.is_completed ? 'success' : 'warning'}>
-                          {kit.is_completed ? 'Completed' : 'In Progress'}
-                        </Badge>
+                        {kit.status === 'generating' && (
+                          <Badge className="bg-indigo-100 text-indigo-700 border-0 gap-1 animate-pulse">
+                            <Loader2 className="w-3 h-3 animate-spin" /> Generating
+                          </Badge>
+                        )}
+                        {kit.status === 'failed' && (
+                          <Badge className="bg-rose-100 text-rose-700 border-0 gap-1">
+                            <AlertTriangle className="w-3 h-3" /> Failed
+                          </Badge>
+                        )}
+                        {kit.status !== 'generating' && kit.status !== 'failed' && (
+                          <Badge variant={kit.is_completed ? 'success' : 'warning'}>
+                            {kit.is_completed ? 'Completed' : 'In Progress'}
+                          </Badge>
+                        )}
                         <ChevronRight className="w-4 h-4 text-zinc-300 group-hover:text-indigo-400 transition-colors" />
                       </div>
                     </div>

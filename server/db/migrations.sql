@@ -58,6 +58,19 @@ CREATE INDEX IF NOT EXISTS idx_interview_kits_created_at ON interview_kits(creat
 CREATE INDEX IF NOT EXISTS idx_documents_uploaded_by ON documents(uploaded_by);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
+-- ─── Async generation support (run these on existing databases) ────────────
+-- Adds generation lifecycle status tracking to interview_kits.
+-- DEFAULT 'completed' so all existing kits remain valid without data migration.
+ALTER TABLE interview_kits
+  ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'completed',
+  ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+-- Allow NULL output_json for kits that are still being generated
+ALTER TABLE interview_kits ALTER COLUMN output_json DROP NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_interview_kits_status ON interview_kits(status);
+-- ───────────────────────────────────────────────────────────────────────────
+
 -- Seed default admin
 -- Password: Admin@123
 INSERT INTO users (name, email, password_hash, role)
