@@ -505,7 +505,7 @@ router.get('/:id', async (req, res) => {
       .single();
 
     if (error || !data) return res.status(404).json({ error: 'Interview kit not found' });
-    if (req.user.role !== 'admin' && data.generated_by !== req.user.id) {
+    if (req.user.role !== 'admin' && data.generated_by !== req.user.id && !data.is_shared) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
