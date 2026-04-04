@@ -16,6 +16,9 @@ const supportRoutes = require('./routes/support.routes');
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
 
+// Trust the first proxy hop (required on Render/Heroku/etc for rate-limiting and IP detection)
+if (isProd) app.set('trust proxy', 1);
+
 // Compression + security middleware
 app.use(compression());
 app.use(helmet({
