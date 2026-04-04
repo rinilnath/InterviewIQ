@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: interviewiq
+    runtime: node
+    region: singapore   # closest to India
+    plan: free          # upgrade to starter ($7/mo) to avoid spin-down
+
+    buildCommand: npm run build && cd server && npm install
+    startCommand: npm start
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # ── Core ──────────────────────────────────────────────
+      - key: PORT
+        value: 10000            # Render uses 10000 by default
+
+      - key: JWT_SECRET
+        generateValue: true     # Render auto-generates a secure random value
+
+      # ── Supabase ──────────────────────────────────────────
+      - key: SUPABASE_URL
+        sync: false             # fill in Render dashboard
+      - key: SUPABASE_ANON_KEY
+        sync: false
+
+      # ── Anthropic (Claude) ────────────────────────────────
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # ── Payment (never sent to browser) ───────────────────
+      - key: PAYMENT_UPI_ID
+        sync: false
+      - key: PAYMENT_ACCOUNT_NUMBER
+        sync: false
+      - key: PAYMENT_IFSC
+        sync: false
+      - key: PAYMENT_BANK_NAME
+        sync: false
+      - key: PAYMENT_BANK_BRANCH
+        sync: false
+      - key: PAYMENT_SWIFT_CODE
+        sync: false
+
+      # ── Support email (Gmail SMTP) ────────────────────────
+      - key: SUPPORT_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_SECURE
+        value: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
