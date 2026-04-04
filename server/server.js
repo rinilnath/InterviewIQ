@@ -40,21 +40,13 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Serve React build in production
+// Serve React build in production; 404 handler in development
 if (isProd) {
   const clientDist = path.join(__dirname, '../client/dist');
   app.use(express.static(clientDist));
-  // SPA fallback — all non-API routes serve index.html
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(clientDist, 'index.html'));
-  });
-}
-
-// 404 handler (dev only, prod uses SPA fallback above)
-if (!isProd) {
-  app.use((req, res) => {
-    res.status(404).json({ error: 'Route not found' });
-  });
+  app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+} else {
+  app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
 }
 
 // Global error handler

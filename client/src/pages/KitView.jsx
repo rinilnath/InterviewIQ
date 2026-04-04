@@ -25,9 +25,9 @@ import api from '@/lib/api';
 import { toast } from '@/hooks/useToast';
 import { formatDateShort, calculateOverallScore, cn } from '@/lib/utils';
 import { useRegenerationStore } from '@/store/regenerationStore';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 const GENERATION_STEPS = [
   { label: 'Analyzing job description...', progress: 15 },
@@ -336,25 +336,42 @@ export default function KitView() {
     toast.success('PDF exported');
   };
 
-  const exportExcel = () => {
+  const exportExcel = async () => {
     if (!kitData) return;
-    const rows = [];
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Interview Kit');
+    ws.columns = [
+      { header: 'Section',        key: 'Section',        width: 20 },
+      { header: 'Weight %',       key: 'Weight %',       width: 10 },
+      { header: 'Q#',             key: 'Q#',             width: 6  },
+      { header: 'Type',           key: 'Type',           width: 14 },
+      { header: 'Question',       key: 'Question',       width: 40 },
+      { header: 'Code Snippet',   key: 'Code Snippet',   width: 30 },
+      { header: 'Source',         key: 'Source',         width: 8  },
+      { header: 'KB Label',       key: 'KB Label',       width: 16 },
+      { header: 'Expert Answer',  key: 'Expert Answer',  width: 40 },
+      { header: 'Score',          key: 'Score',          width: 8  },
+      { header: 'Notes',          key: 'Notes',          width: 24 },
+    ];
     kitData.output_json.sections?.forEach((section) => {
       section.questions?.forEach((q) => {
-        rows.push({
-          Section: section.section_name, 'Weight %': section.weight_percentage,
-          'Q#': q.id, Type: q.question_type || 'standard',
-          Question: q.question, 'Code Snippet': q.code_snippet || '',
-          Source: q.source, 'KB Label': q.kb_label || '',
+        ws.addRow({
+          'Section': section.section_name, 'Weight %': section.weight_percentage,
+          'Q#': q.id, 'Type': q.question_type || 'standard',
+          'Question': q.question, 'Code Snippet': q.code_snippet || '',
+          'Source': q.source, 'KB Label': q.kb_label || '',
           'Expert Answer': q.strong_answer,
-          Score: q.score != null ? q.score : '', Notes: q.notes || '',
+          'Score': q.score != null ? q.score : '', 'Notes': q.notes || '',
         });
       });
     });
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Interview Kit');
-    XLSX.writeFile(wb, `${kitData.output_json.kit_title?.replace(/[^a-z0-9]/gi, '_')}_InterviewKit.xlsx`);
+    const buffer = await wb.xlsx.writeBuffer();
+    const url = URL.createObjectURL(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${kitData.output_json.kit_title?.replace(/[^a-z0-9]/gi, '_')}_InterviewKit.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
     toast.success('Excel exported');
   };
 
