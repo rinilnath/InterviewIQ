@@ -25,12 +25,12 @@ const navItems = [
   { to: '/history', label: 'History', icon: History },
   { to: '/shared', label: 'Shared Kits', icon: Globe },
   { to: '/trash', label: 'Trash', icon: Trash2 },
+  { to: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
   { to: '/account', label: 'Account', icon: UserCircle },
 ];
 
 const adminItems = [
   { to: '/admin/users', label: 'Users', icon: Users },
-  { to: '/admin/documents', label: 'Knowledge Base', icon: BookOpen },
 ];
 
 export function Sidebar() {
@@ -60,14 +60,14 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-white border-r border-zinc-200 shrink-0">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-6 py-5 border-b border-zinc-100 shrink-0">
+      <div className="flex items-center gap-2.5 px-6 py-5 border-b border-zinc-100">
         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600">
           <BrainCircuit className="w-5 h-5 text-white" />
         </div>
         <span className="text-lg font-semibold text-zinc-900 tracking-tight">InterviewIQ</span>
       </div>
 
-      {/* Navigation — scrollable if many items */}
+      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => (
           <NavLink key={item.to} item={item} isActive={isActive(item.to)} />
@@ -85,7 +85,7 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* User section — always at bottom, never scrolls away */}
+      {/* User section */}
       <div className="px-3 py-4 border-t border-zinc-100 space-y-2 shrink-0">
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-zinc-50">
           <div className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-sm font-semibold shrink-0">

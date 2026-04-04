@@ -128,4 +128,50 @@ router.post('/change-password', verifyToken, async (req, res) => {
   }
 });
 
+// POST /api/auth/deletion-request — authenticated user requests account deletion
+router.post('/deletion-request', verifyToken, async (req, res) => {
+  try {
+    const { reason } = req.body;
+
+    // Check if there's already a pending request
+    const { data: existing } = await supabase
+      .from('account_deletion_requests')
+      .select('id')
+      .eq('user_id', req.user.id)
+      .eq('status', 'pending')
+      .single();
+
+    if (existing) {
+      return res.status(409).json({ error: 'You already have a pending deletion request.' });
+    }
+
+    const { error } = await supabase
+      .from('account_deletion_requests')
+      .insert({ user_id: req.user.id, reason: reason?.trim() || null });
+
+    if (error) throw error;
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Deletion request error:', err);
+    res.status(500).json({ error: 'Failed to submit deletion request.' });
+  }
+});
+
+// GET /api/auth/deletion-request — check current user's pending request
+router.get('/deletion-request', verifyToken, async (req, res) => {
+  try {
+    const { data } = await supabase
+      .from('account_deletion_requests')
+      .select('id, status, created_at')
+      .eq('user_id', req.user.id)
+      .eq('status', 'pending')
+      .maybeSingle();
+
+    res.json({ request: data || null });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to check deletion request.' });
+  }
+});
+
 module.exports = router;

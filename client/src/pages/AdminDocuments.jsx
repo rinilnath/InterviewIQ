@@ -45,6 +45,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import api from '@/lib/api';
 import { toast } from '@/hooks/useToast';
 import { formatDateShort, formatFileSize, DOCUMENT_TYPES, DOC_TYPE_COLORS } from '@/lib/utils';
+import { useAuthStore } from '@/store/authStore';
 
 const uploadSchema = z.object({
   label: z.string().min(2, 'Label must be at least 2 characters'),
@@ -59,6 +60,8 @@ const ACCEPTED_TYPES = {
 };
 
 export default function AdminDocuments() {
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'admin';
   const queryClient = useQueryClient();
   const [showUpload, setShowUpload] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -171,7 +174,7 @@ export default function AdminDocuments() {
         <div className="text-center py-20">
           <FileText className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
           <h3 className="text-base font-medium text-zinc-900">No documents yet</h3>
-          <p className="text-sm text-zinc-500 mt-1 mb-4">Upload documents to build your knowledge base.</p>
+          <p className="text-sm text-zinc-500 mt-1 mb-4">Upload documents to build the knowledge base.</p>
           <Button onClick={() => setShowUpload(true)} className="bg-indigo-600 hover:bg-indigo-700">
             Upload First Document
           </Button>
@@ -221,12 +224,14 @@ export default function AdminDocuments() {
                     <td className="px-4 py-3 text-zinc-500">{doc.users?.name || '—'}</td>
                     <td className="px-4 py-3 text-zinc-500">{formatDateShort(doc.created_at)}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => setDeleteId(doc.id)}
-                        className="text-zinc-300 hover:text-rose-500 transition-colors p-1 rounded"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => setDeleteId(doc.id)}
+                          className="text-zinc-300 hover:text-rose-500 transition-colors p-1 rounded"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </motion.tr>
                 ))}

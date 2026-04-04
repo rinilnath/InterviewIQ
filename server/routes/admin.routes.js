@@ -172,6 +172,54 @@ router.get('/users/:id/usage', async (req, res) => {
   }
 });
 
+// DELETE /api/admin/users/:id — cascade-delete all user data then the user row
+router.delete('/users/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (id === req.user.id) {
+      return res.status(400).json({ error: 'You cannot delete your own account' });
+    }
+
+    // Verify user exists
+    const { data: target, error: fetchErr } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !target) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Delete in dependency order (children first, then the user row)
+    const tables = [
+      { table: 'interview_kits',       column: 'generated_by' },
+      { table: 'documents',            column: 'uploaded_by'  },
+      { table: 'upgrade_requests',     column: 'user_id'      },
+      { table: 'email_logs',           column: 'user_id'      },
+      { table: 'account_deletion_requests', column: 'user_id' },
+    ];
+
+    for (const { table, column } of tables) {
+      const { error } = await supabase.from(table).delete().eq(column, id);
+      // Ignore "table does not exist" style errors for optional tables
+      if (error && !error.message.includes('does not exist')) {
+        console.error(`[Admin] Delete cascade failed on ${table}:`, error.message);
+      }
+    }
+
+    // Finally delete the user
+    const { error: delErr } = await supabase.from('users').delete().eq('id', id);
+    if (delErr) throw delErr;
+
+    res.json({ message: 'User and all associated data deleted' });
+  } catch (err) {
+    console.error('Delete user error:', err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
 // POST /api/admin/users/:id/reset-password
 router.post('/users/:id/reset-password', async (req, res) => {
   try {
@@ -195,6 +243,67 @@ router.post('/users/:id/reset-password', async (req, res) => {
   } catch (err) {
     console.error('Reset password error:', err);
     res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// GET /api/admin/deletion-requests — list all pending deletion requests
+router.get('/deletion-requests', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('account_deletion_requests')
+      .select('id, reason, status, created_at, user_id, users(name, email)')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    res.json({ requests: data });
+  } catch (err) {
+    console.error('List deletion requests error:', err);
+    res.status(500).json({ error: 'Failed to fetch deletion requests' });
+  }
+});
+
+// POST /api/admin/deletion-requests/:id/approve — approve and execute deletion
+router.post('/deletion-requests/:id/approve', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get the deletion request
+    const { data: request, error: fetchErr } = await supabase
+      .from('account_deletion_requests')
+      .select('id, user_id, status')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !request) return res.status(404).json({ error: 'Request not found' });
+    if (request.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
+
+    const userId = request.user_id;
+
+    // Cascade-delete all user data (same order as admin delete)
+    const tables = [
+      { table: 'interview_kits',            column: 'generated_by' },
+      { table: 'documents',                 column: 'uploaded_by'  },
+      { table: 'upgrade_requests',          column: 'user_id'      },
+      { table: 'email_logs',                column: 'user_id'      },
+      { table: 'account_deletion_requests', column: 'user_id'      },
+    ];
+
+    for (const { table, column } of tables) {
+      const { error } = await supabase.from(table).delete().eq(column, userId);
+      if (error && !error.message.includes('does not exist')) {
+        console.error(`[Admin] Deletion cascade failed on ${table}:`, error.message);
+      }
+    }
+
+    // Delete the user row (this also cascades the deletion request via ON DELETE CASCADE)
+    const { error: delErr } = await supabase.from('users').delete().eq('id', userId);
+    if (delErr) throw delErr;
+
+    res.json({ message: 'User data permanently erased' });
+  } catch (err) {
+    console.error('Approve deletion request error:', err);
+    res.status(500).json({ error: 'Failed to process deletion request' });
   }
 });
 

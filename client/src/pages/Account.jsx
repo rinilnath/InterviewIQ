@@ -5,7 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import {
   Zap, CheckCircle2, Clock, Crown, Shield,
   RefreshCw, Globe, Smartphone, ChevronRight, Building2, AlertCircle, MessageSquare,
-  Eye, EyeOff, Lock,
+  Eye, EyeOff, Lock, Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -419,6 +419,8 @@ export default function Account() {
   const [selectedPlan, setSelectedPlan]   = useState(null);
   const [supportDialog, setSupportDialog] = useState(false);
   const [supportSubject, setSupportSubject] = useState('');
+  const [deletionReason, setDeletionReason] = useState('');
+  const [showDeletionForm, setShowDeletionForm] = useState(false);
 
   const { data: quota, isLoading: quotaLoading } = useQuery({
     queryKey: ['interview', 'quota'],
@@ -443,6 +445,25 @@ export default function Account() {
     queryFn:  async () => (await api.get('/payment/my-requests')).data.requests,
     staleTime: 30_000,
   });
+
+  const { data: deletionReqData, refetch: refetchDeletion } = useQuery({
+    queryKey: ['auth', 'deletion-request'],
+    queryFn:  async () => (await api.get('/auth/deletion-request')).data,
+    staleTime: 60_000,
+  });
+
+  const deletionMutation = useMutation({
+    mutationFn: () => api.post('/auth/deletion-request', { reason: deletionReason.trim() || undefined }),
+    onSuccess: () => {
+      refetchDeletion();
+      setShowDeletionForm(false);
+      setDeletionReason('');
+      toast.success('Request submitted', 'An admin will review your deletion request shortly.');
+    },
+    onError: (err) => toast.error('Failed', err.response?.data?.error || 'Could not submit request.'),
+  });
+
+  const pendingDeletion = deletionReqData?.request;
 
   const plans          = plansData?.plans || {};
   const tierMeta       = TIER_META[quota?.tierKey] || TIER_META.free;
@@ -737,6 +758,72 @@ export default function Account() {
       <div className="space-y-3">
         <h3 className="text-base font-semibold text-zinc-900">Security</h3>
         <ChangePasswordSection />
+      </div>
+
+      {/* Right to forget */}
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold text-zinc-900">Privacy</h3>
+        {pendingDeletion ? (
+          <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+            <Clock className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-rose-700">Deletion request pending</p>
+              <p className="text-xs text-rose-500 mt-0.5">
+                Submitted {new Date(pendingDeletion.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}. An admin will review it shortly.
+              </p>
+            </div>
+          </div>
+        ) : showDeletionForm ? (
+          <div className="rounded-xl border border-rose-200 bg-white overflow-hidden">
+            <div className="bg-rose-50 border-b border-rose-100 px-4 py-3 flex items-center gap-2">
+              <Trash2 className="w-4 h-4 text-rose-600" />
+              <p className="text-sm font-semibold text-rose-700">Request Account Deletion</p>
+            </div>
+            <div className="px-4 py-4 space-y-3">
+              <p className="text-xs text-zinc-500">
+                Your request will be reviewed by an admin. Once approved, all your data — kits, documents, and account — will be permanently erased.
+              </p>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">Reason <span className="font-normal text-zinc-400">(optional)</span></Label>
+                <textarea
+                  rows={3}
+                  placeholder="Tell us why you want to delete your account…"
+                  value={deletionReason}
+                  onChange={(e) => setDeletionReason(e.target.value)}
+                  className="w-full rounded-xl border border-zinc-200 px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-rose-400 resize-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowDeletionForm(false)}>Cancel</Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  onClick={() => deletionMutation.mutate()}
+                  disabled={deletionMutation.isPending}
+                >
+                  {deletionMutation.isPending ? 'Submitting…' : 'Submit Request'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <Card className="border-zinc-200">
+            <CardContent className="px-4 py-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-zinc-900">Delete my account</p>
+                <p className="text-xs text-zinc-500 mt-0.5">Request permanent erasure of all your data.</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-rose-200 text-rose-600 hover:bg-rose-50 shrink-0"
+                onClick={() => setShowDeletionForm(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Request Deletion
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Payment dialog */}
