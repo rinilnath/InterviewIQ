@@ -21,5 +21,6 @@
     <include file="changesets/v1.3.0__soft_delete_trash.sql"       relativeToChangelogFile="true"/>
     <include file="changesets/v1.4.0__shared_kits.sql"             relativeToChangelogFile="true"/>
     <include file="changesets/v1.5.0__subscriptions.sql"           relativeToChangelogFile="true"/>
+    <include file="changesets/v1.6.0__upgrade_requests.sql"        relativeToChangelogFile="true"/>
 
 </databaseChangeLog>
