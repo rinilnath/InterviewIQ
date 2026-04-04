@@ -21,7 +21,7 @@ async function verifyToken(req, res, next) {
     // Verify user still exists and is active
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, name, email, role, is_active')
+      .select('id, name, email, role, is_active, subscription_tier, subscription_expires_at')
       .eq('id', decoded.userId)
       .single();
 

@@ -16,7 +16,7 @@ import { useAuthStore } from '@/store/authStore';
 import { Badge } from '@/components/ui/badge';
 import api from '@/lib/api';
 import { toast } from '@/hooks/useToast';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -36,6 +36,13 @@ export function Sidebar() {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
   const queryClient = useQueryClient();
+
+  const { data: quota } = useQuery({
+    queryKey: ['interview', 'quota'],
+    queryFn: async () => (await api.get('/interview/quota')).data,
+    staleTime: 2 * 60 * 1000,
+    enabled: !!user,
+  });
 
   const handleLogout = async () => {
     try {
@@ -84,11 +91,36 @@ export function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-zinc-900 truncate">{user?.name}</p>
-            <Badge variant={user?.role === 'admin' ? 'default' : 'secondary'} className="text-xs px-1.5 py-0 mt-0.5">
-              {user?.role}
-            </Badge>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <Badge variant={user?.role === 'admin' ? 'default' : 'secondary'} className="text-xs px-1.5 py-0">
+                {user?.role}
+              </Badge>
+              {quota && !quota.isUnlimited && (
+                <span className="text-xs text-zinc-400">{quota.tier}</span>
+              )}
+            </div>
           </div>
         </div>
+        {/* Monthly quota bar — hidden for admin/unlimited */}
+        {quota && !quota.isUnlimited && (
+          <div className="px-3 space-y-1">
+            <div className="flex justify-between text-xs text-zinc-500">
+              <span>Kits this month</span>
+              <span className={quota.remaining === 0 ? 'text-rose-600 font-medium' : ''}>
+                {quota.used} / {quota.limit}
+              </span>
+            </div>
+            <div className="h-1.5 rounded-full bg-zinc-100 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  quota.percentUsed >= 100 ? 'bg-rose-500' :
+                  quota.percentUsed >= 80  ? 'bg-amber-400' : 'bg-indigo-500'
+                }`}
+                style={{ width: `${Math.min(100, quota.percentUsed)}%` }}
+              />
+            </div>
+          </div>
+        )}
         <button
           onClick={handleLogout}
           className="flex items-center gap-2 w-full px-3 py-2 text-sm text-zinc-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"

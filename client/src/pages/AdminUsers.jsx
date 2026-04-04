@@ -11,6 +11,7 @@ import {
   UserX,
   KeyRound,
   Shield,
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,10 +63,20 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+const TIER_LABELS = { free: 'Free', pro: 'Pro', enterprise: 'Enterprise' };
+const TIER_COLORS = {
+  free:       'bg-zinc-100 text-zinc-600',
+  pro:        'bg-indigo-100 text-indigo-700',
+  enterprise: 'bg-violet-100 text-violet-700',
+};
+
 export default function AdminUsers() {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [resetPasswordUser, setResetPasswordUser] = useState(null);
+  const [subscriptionUser, setSubscriptionUser] = useState(null);
+  const [subTier, setSubTier] = useState('free');
+  const [subExpiry, setSubExpiry] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'users'],
@@ -105,6 +116,20 @@ export default function AdminUsers() {
     onError: () => toast.error('Reset failed', 'Could not reset password.'),
   });
 
+  const subscriptionMutation = useMutation({
+    mutationFn: ({ id, tier, expiry }) =>
+      api.patch(`/admin/users/${id}/subscription`, {
+        subscription_tier: tier,
+        subscription_expires_at: expiry || null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['admin', 'users']);
+      toast.success('Subscription updated', 'User plan has been changed.');
+      setSubscriptionUser(null);
+    },
+    onError: (err) => toast.error('Update failed', err.response?.data?.error || 'Could not update subscription.'),
+  });
+
   const createForm = useForm({
     resolver: zodResolver(createUserSchema),
     defaultValues: { role: 'user' },
@@ -142,6 +167,7 @@ export default function AdminUsers() {
                   <th className="text-left px-4 py-3 font-medium text-zinc-500">Name</th>
                   <th className="text-left px-4 py-3 font-medium text-zinc-500">Email</th>
                   <th className="text-left px-4 py-3 font-medium text-zinc-500">Role</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Plan</th>
                   <th className="text-left px-4 py-3 font-medium text-zinc-500">Status</th>
                   <th className="text-left px-4 py-3 font-medium text-zinc-500">Created</th>
                   <th className="text-right px-4 py-3 font-medium text-zinc-500">Actions</th>
@@ -170,6 +196,23 @@ export default function AdminUsers() {
                         {u.role === 'admin' && <Shield className="w-3 h-3 mr-1" />}
                         {u.role}
                       </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      {u.role === 'admin' ? (
+                        <span className="text-xs text-zinc-400">Unlimited</span>
+                      ) : (
+                        <div>
+                          <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${TIER_COLORS[u.subscription_tier] || TIER_COLORS.free}`}>
+                            <Zap className="w-2.5 h-2.5" />
+                            {TIER_LABELS[u.subscription_tier] || 'Free'}
+                          </span>
+                          {u.subscription_expires_at && (
+                            <p className="text-xs text-zinc-400 mt-0.5">
+                              Exp {new Date(u.subscription_expires_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' })}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -204,6 +247,16 @@ export default function AdminUsers() {
                             )}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
+                          {u.role !== 'admin' && (
+                            <DropdownMenuItem onClick={() => {
+                              setSubscriptionUser(u);
+                              setSubTier(u.subscription_tier || 'free');
+                              setSubExpiry(u.subscription_expires_at ? u.subscription_expires_at.slice(0, 10) : '');
+                            }}>
+                              <Zap className="w-4 h-4 mr-2 text-indigo-500" />
+                              Set Plan
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={() => setResetPasswordUser(u)}>
                             <KeyRound className="w-4 h-4 mr-2" />
                             Reset Password
@@ -283,6 +336,54 @@ export default function AdminUsers() {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Set Plan Dialog */}
+      <Dialog open={!!subscriptionUser} onOpenChange={(o) => !o && setSubscriptionUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set Plan — {subscriptionUser?.name}</DialogTitle>
+            <DialogDescription>
+              Free: 5 kits/mo · Pro: 50 kits/mo · Enterprise: 200 kits/mo
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Subscription Plan</Label>
+              <Select value={subTier} onValueChange={setSubTier}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="free">Free — 5 kits / month</SelectItem>
+                  <SelectItem value="pro">Pro — 50 kits / month</SelectItem>
+                  <SelectItem value="enterprise">Enterprise — 200 kits / month</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {subTier !== 'free' && (
+              <div className="space-y-1.5">
+                <Label>Expiry Date <span className="text-zinc-400 font-normal">(leave blank = never expires)</span></Label>
+                <Input
+                  type="date"
+                  value={subExpiry}
+                  onChange={(e) => setSubExpiry(e.target.value)}
+                  min={new Date().toISOString().slice(0, 10)}
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSubscriptionUser(null)}>Cancel</Button>
+            <Button
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              onClick={() => subscriptionMutation.mutate({ id: subscriptionUser?.id, tier: subTier, expiry: subExpiry })}
+              disabled={subscriptionMutation.isPending}
+            >
+              {subscriptionMutation.isPending ? 'Saving...' : 'Save Plan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Reset Password Dialog */}
       <Dialog open={!!resetPasswordUser} onOpenChange={(o) => !o && setResetPasswordUser(null)}>

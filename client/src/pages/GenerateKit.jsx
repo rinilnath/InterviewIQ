@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Plus, X, Loader2 } from 'lucide-react';
+import { Sparkles, Plus, X, Loader2, AlertTriangle, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
 import { SENIORITY_LEVELS } from '@/lib/utils';
 import { toast } from '@/hooks/useToast';
@@ -34,11 +35,21 @@ const COMMON_TECH = [
 
 export default function GenerateKit() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { add: addGeneratingKit } = useGeneratingKitsStore();
   const [techStack, setTechStack] = useState([]);
   const [techInput, setTechInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [kbPercentage, setKbPercentage] = useState(25);
+
+  const { data: quota } = useQuery({
+    queryKey: ['interview', 'quota'],
+    queryFn: async () => (await api.get('/interview/quota')).data,
+    staleTime: 60_000,
+  });
+
+  const quotaExhausted = quota && !quota.isUnlimited && quota.remaining === 0;
+  const quotaWarning  = quota && !quota.isUnlimited && quota.remaining > 0 && quota.percentUsed >= 80;
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
@@ -67,9 +78,8 @@ export default function GenerateKit() {
       const res = await api.post('/interview/generate', { ...data, techStack, kbPercentage });
       const kit = res.data.kit;
 
-      // Register with global watcher so toast fires even if user navigates elsewhere
       addGeneratingKit(kit.id, kit.kit_title);
-
+      queryClient.invalidateQueries(['interview', 'quota']); // refresh quota bar
       toast.success('Generation started!', 'Your kit is being built in the background.');
       reset();
       setTechStack([]);
@@ -89,6 +99,29 @@ export default function GenerateKit() {
           Generation runs in the background — submit multiple kits and continue working freely.
         </p>
       </div>
+
+      {/* Quota banners */}
+      {quotaExhausted && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-rose-50 border border-rose-200">
+          <AlertTriangle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-rose-800">Monthly limit reached</p>
+            <p className="text-xs text-rose-600 mt-0.5">
+              You've used all {quota.limit} kits on the {quota.tier} plan.
+              Quota resets on {new Date(quota.resetsAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.
+              Contact your admin to upgrade.
+            </p>
+          </div>
+        </div>
+      )}
+      {quotaWarning && (
+        <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+          <Zap className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+          <p className="text-sm text-amber-700">
+            <strong>{quota.remaining} kit{quota.remaining !== 1 ? 's' : ''} remaining</strong> this month on your {quota.tier} plan.
+          </p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
         {/* JD */}
@@ -251,13 +284,15 @@ export default function GenerateKit() {
 
         <Button
           type="submit"
-          disabled={isSubmitting}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 h-11 text-base font-medium"
+          disabled={isSubmitting || quotaExhausted}
+          className="w-full bg-indigo-600 hover:bg-indigo-700 h-11 text-base font-medium disabled:opacity-60"
         >
           {isSubmitting ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> Starting generation...</>
+          ) : quotaExhausted ? (
+            <><AlertTriangle className="w-4 h-4" /> Monthly Limit Reached</>
           ) : (
-            <><Sparkles className="w-4 h-4" /> Generate Interview Kit</>
+            <><Sparkles className="w-4 h-4" /> Generate Interview Kit{quota && !quota.isUnlimited ? ` (${quota.remaining} left)` : ''}</>
           )}
         </Button>
       </form>

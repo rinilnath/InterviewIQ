@@ -3,6 +3,7 @@ const rateLimit = require('express-rate-limit');
 const supabase = require('../services/supabase.service');
 const { verifyToken } = require('../middleware/auth.middleware');
 const { generateInterviewKit } = require('../services/claude.service');
+const { TIER_CONFIG, getEffectiveTier, getMonthlyLimit } = require('../config/tiers');
 
 const router = express.Router();
 
@@ -139,6 +140,49 @@ recoverStuckGenerations();
 // ROUTES — ordered so named paths (/history, /trash/*) come before /:id
 // ─────────────────────────────────────────────────────────────────────────
 
+// ─── Quota helpers ────────────────────────────────────────────────────────
+async function getMonthlyUsage(userId) {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+  const { count, error } = await supabase
+    .from('interview_kits')
+    .select('id', { count: 'exact', head: true })
+    .eq('generated_by', userId)
+    .gte('created_at', startOfMonth)
+    .lt('created_at', nextMonth)
+    .in('status', ['generating', 'completed']); // cancelled/failed don't consume quota
+  if (error) throw error;
+  return count || 0;
+}
+
+// GET /api/interview/quota — current user's monthly usage
+router.get('/quota', async (req, res) => {
+  try {
+    const tier = getEffectiveTier(req.user);
+    const limit = getMonthlyLimit(req.user);
+    const used = req.user.role === 'admin' ? await getMonthlyUsage(req.user.id) : await getMonthlyUsage(req.user.id);
+    const now = new Date();
+    const resetsAt = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+    const tierLabel = req.user.role === 'admin' ? 'Admin' : (TIER_CONFIG[tier]?.label ?? 'Free');
+
+    res.json({
+      tier: tierLabel,
+      tierKey: tier,
+      used,
+      limit: limit === Infinity ? null : limit,
+      remaining: limit === Infinity ? null : Math.max(0, limit - used),
+      percentUsed: limit === Infinity ? 0 : Math.min(100, Math.round((used / limit) * 100)),
+      resetsAt,
+      isUnlimited: limit === Infinity,
+      expiresAt: req.user.subscription_expires_at || null,
+    });
+  } catch (err) {
+    console.error('Quota error:', err);
+    res.status(500).json({ error: 'Failed to fetch quota' });
+  }
+});
+
 // POST /api/interview/generate
 router.post('/generate', generateLimiter, async (req, res) => {
   try {
@@ -150,6 +194,25 @@ router.post('/generate', generateLimiter, async (req, res) => {
     if (!Array.isArray(techStack) || techStack.length === 0) {
       return res.status(400).json({ error: 'Tech stack must be a non-empty array' });
     }
+
+    // ── Quota enforcement ───────────────────────────────────────────────────
+    const monthlyLimit = getMonthlyLimit(req.user);
+    if (monthlyLimit !== Infinity) {
+      const used = await getMonthlyUsage(req.user.id);
+      if (used >= monthlyLimit) {
+        const tier = getEffectiveTier(req.user);
+        const now = new Date();
+        const resetsAt = new Date(now.getFullYear(), now.getMonth() + 1, 1).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+        return res.status(429).json({
+          error: `Monthly limit reached — you have used all ${monthlyLimit} kit${monthlyLimit !== 1 ? 's' : ''} on the ${TIER_CONFIG[tier]?.label ?? 'Free'} plan.`,
+          hint: `Your quota resets on ${resetsAt}. Ask your admin to upgrade your subscription for more.`,
+          used,
+          limit: monthlyLimit,
+          tier,
+        });
+      }
+    }
+    // ────────────────────────────────────────────────────────────────────────
 
     let knowledgeBaseDocs = [];
     if (useKnowledgeBase) {

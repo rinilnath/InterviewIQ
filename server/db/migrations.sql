@@ -91,6 +91,16 @@ CREATE INDEX IF NOT EXISTS idx_interview_kits_deleted_at
   WHERE deleted_at IS NOT NULL;
 -- ───────────────────────────────────────────────────────────────────────────
 
+-- ─── Subscription Tiers (v1.5.0) ──────────────────────────────────────────
+-- Per-user monthly generation quota. Admin role bypasses all limits.
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS subscription_tier VARCHAR(20) NOT NULL DEFAULT 'free'
+    CHECK (subscription_tier IN ('free', 'pro', 'enterprise')),
+  ADD COLUMN IF NOT EXISTS subscription_expires_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_users_subscription_tier ON users(subscription_tier);
+-- ───────────────────────────────────────────────────────────────────────────
+
 -- ─── Shared Kits (v1.4.0) ─────────────────────────────────────────────────
 -- Completed kits can be published org-wide by toggling is_shared.
 -- Shared kits are visible to all users on the /shared page.
