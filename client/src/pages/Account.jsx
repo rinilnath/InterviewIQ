@@ -5,6 +5,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import {
   Zap, CheckCircle2, Clock, Crown, Shield,
   RefreshCw, Globe, Smartphone, ChevronRight, Building2, AlertCircle, MessageSquare,
+  Eye, EyeOff, Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -319,6 +320,93 @@ function PaymentDialog({ open, onClose, selectedPlan, plans, payInfo }) {
 
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Change Password ──────────────────────────────────────────────────────────
+
+function ChangePasswordSection() {
+  const [current, setCurrent]   = useState('');
+  const [next, setNext]         = useState('');
+  const [confirm, setConfirm]   = useState('');
+  const [show, setShow]         = useState({ current: false, next: false, confirm: false });
+
+  const toggle = (field) => setShow((s) => ({ ...s, [field]: !s[field] }));
+
+  const mismatch = confirm && next !== confirm;
+  const tooShort = next && next.length < 8;
+
+  const mutation = useMutation({
+    mutationFn: () => api.post('/auth/change-password', {
+      currentPassword: current,
+      newPassword:     next,
+    }),
+    onSuccess: () => {
+      setCurrent(''); setNext(''); setConfirm('');
+      toast.success('Password updated', 'Your password has been changed successfully.');
+    },
+    onError: (err) => toast.error('Failed', err.response?.data?.error || 'Please try again.'),
+  });
+
+  const canSubmit = current && next && confirm && !mismatch && !tooShort && !mutation.isPending;
+
+  return (
+    <Card className="border-zinc-200 shadow-sm">
+      <CardContent className="p-6 space-y-5">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-zinc-100 flex items-center justify-center">
+            <Lock className="w-4 h-4 text-zinc-600" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-zinc-900">Change Password</p>
+            <p className="text-xs text-zinc-400">Use a strong password — at least 8 characters.</p>
+          </div>
+        </div>
+
+        <div className="space-y-3 max-w-sm">
+          {[
+            { id: 'current', label: 'Current password', value: current, set: setCurrent },
+            { id: 'next',    label: 'New password',     value: next,    set: setNext,
+              hint: tooShort ? 'At least 8 characters required' : null },
+            { id: 'confirm', label: 'Confirm new password', value: confirm, set: setConfirm,
+              hint: mismatch ? 'Passwords do not match' : null },
+          ].map(({ id, label, value, set, hint }) => (
+            <div key={id} className="space-y-1">
+              <Label className="text-xs font-medium text-zinc-600">{label}</Label>
+              <div className="relative">
+                <Input
+                  type={show[id] ? 'text' : 'password'}
+                  value={value}
+                  onChange={(e) => set(e.target.value)}
+                  className={cn('pr-9', hint && 'border-rose-300 focus-visible:ring-rose-400')}
+                  autoComplete={id === 'current' ? 'current-password' : 'new-password'}
+                />
+                <button
+                  type="button"
+                  onClick={() => toggle(id)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                  tabIndex={-1}
+                >
+                  {show[id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              {hint && <p className="text-xs text-rose-500">{hint}</p>}
+            </div>
+          ))}
+        </div>
+
+        <Button
+          size="sm"
+          className="bg-zinc-900 hover:bg-zinc-800 text-white font-semibold"
+          onClick={() => mutation.mutate()}
+          disabled={!canSubmit}
+        >
+          {mutation.isPending
+            ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />&nbsp;Updating…</>
+            : 'Update Password'}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -644,6 +732,12 @@ export default function Account() {
           </div>
         </div>
       )}
+
+      {/* Security */}
+      <div className="space-y-3">
+        <h3 className="text-base font-semibold text-zinc-900">Security</h3>
+        <ChangePasswordSection />
+      </div>
 
       {/* Payment dialog */}
       <PaymentDialog
