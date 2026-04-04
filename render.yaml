@@ -2,34 +2,29 @@ services:
   - type: web
     name: interviewiq
     runtime: node
-    region: singapore   # closest to India
-    plan: free          # upgrade to starter ($7/mo) to avoid spin-down
+    region: singapore
+    plan: free
 
-    buildCommand: npm run build
+    # NOTE: If you deployed this service manually via the Render dashboard,
+    # copy these values into Dashboard → Settings:
+    #   Build Command: npm install && npm run build
+    #   Start Command: npm start
+    buildCommand: npm install && npm run build
     startCommand: npm start
 
     envVars:
       - key: NODE_ENV
         value: production
-
-      # ── Core ──────────────────────────────────────────────
       - key: PORT
-        value: 10000            # Render uses 10000 by default
-
+        value: 10000
       - key: JWT_SECRET
-        generateValue: true     # Render auto-generates a secure random value
-
-      # ── Supabase ──────────────────────────────────────────
+        generateValue: true
       - key: SUPABASE_URL
-        sync: false             # fill in Render dashboard
+        sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
-
-      # ── Anthropic (Claude) ────────────────────────────────
       - key: ANTHROPIC_API_KEY
         sync: false
-
-      # ── Payment (never sent to browser) ───────────────────
       - key: PAYMENT_UPI_ID
         sync: false
       - key: PAYMENT_ACCOUNT_NUMBER
@@ -42,8 +37,6 @@ services:
         sync: false
       - key: PAYMENT_SWIFT_CODE
         sync: false
-
-      # ── Support email (Gmail SMTP) ────────────────────────
       - key: SUPPORT_EMAIL
         sync: false
       - key: SMTP_HOST
