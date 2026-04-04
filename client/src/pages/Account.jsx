@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Zap, CheckCircle2, Clock, Crown, Shield,
-  RefreshCw, Globe, Smartphone, ChevronRight, Building2,
+  RefreshCw, Globe, Smartphone, ChevronRight, Building2, AlertCircle, MessageSquare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,8 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/store/authStore';
 import api from '@/lib/api';
@@ -37,6 +39,77 @@ function fmt(n) {
 }
 
 // ─── Payment Dialog ───────────────────────────────────────────────────────────
+
+// ─── Support Dialog ───────────────────────────────────────────────────────────
+
+function SupportDialog({ open, onClose, defaultSubject = '' }) {
+  const [subject, setSubject] = useState(defaultSubject);
+  const [message, setMessage] = useState('');
+
+  const submitMutation = useMutation({
+    mutationFn: () => api.post('/support/contact', { subject: subject.trim(), message: message.trim() }),
+    onSuccess: () => {
+      onClose();
+      setSubject('');
+      setMessage('');
+      toast.success('Message sent', 'We\'ll get back to you shortly.');
+    },
+    onError: (err) => toast.error('Failed to send', err.response?.data?.error || 'Please try again.'),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="w-[92vw] max-w-[420px] gap-0 rounded-2xl overflow-hidden border-0 shadow-2xl p-0 [&>button.absolute]:text-white/70 [&>button.absolute]:hover:text-white">
+        <div className="bg-zinc-900 px-5 py-4">
+          <DialogHeader>
+            <div className="flex items-center gap-1.5 mb-2">
+              <MessageSquare className="w-3 h-3 text-zinc-500" />
+              <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Support</span>
+            </div>
+            <DialogTitle className="text-white text-base font-semibold">Contact Us</DialogTitle>
+            <p className="text-xs text-zinc-400 mt-1">We'll reply to your registered email address.</p>
+          </DialogHeader>
+        </div>
+
+        <div className="bg-white px-5 py-5 space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">Subject</Label>
+            <Input
+              placeholder="e.g. Payment not verified"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-zinc-600 uppercase tracking-wide">Message</Label>
+            <textarea
+              rows={5}
+              placeholder="Describe your issue in detail…"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900 resize-none"
+            />
+          </div>
+
+          <Button
+            className="w-full h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-semibold rounded-xl"
+            onClick={() => submitMutation.mutate()}
+            disabled={!subject.trim() || message.trim().length < 20 || submitMutation.isPending}
+          >
+            {submitMutation.isPending
+              ? <><RefreshCw className="w-4 h-4 animate-spin" />&nbsp;Sending…</>
+              : 'Send Message'}
+          </Button>
+
+          <p className="text-[11px] text-zinc-400 text-center">
+            We typically respond within 24 hours.
+          </p>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function PaymentDialog({ open, onClose, selectedPlan, plans, payInfo }) {
   const queryClient = useQueryClient();
@@ -256,6 +329,8 @@ export default function Account() {
   const queryClient = useQueryClient();
   const [upgradeDialog, setUpgradeDialog] = useState(false);
   const [selectedPlan, setSelectedPlan]   = useState(null);
+  const [supportDialog, setSupportDialog] = useState(false);
+  const [supportSubject, setSupportSubject] = useState('');
 
   const { data: quota, isLoading: quotaLoading } = useQuery({
     queryKey: ['interview', 'quota'],
@@ -284,7 +359,8 @@ export default function Account() {
   const plans          = plansData?.plans || {};
   const tierMeta       = TIER_META[quota?.tierKey] || TIER_META.free;
   const TierIcon       = tierMeta.icon;
-  const pendingRequest = (myRequests || []).find((r) => r.status === 'pending');
+  const pendingRequest  = (myRequests || []).find((r) => r.status === 'pending');
+  const rejectedRequest = (myRequests || []).find((r) => r.status === 'rejected' && !pendingRequest);
 
   const openUpgrade = (key, period) => {
     setSelectedPlan({ key, period });
@@ -372,6 +448,39 @@ export default function Account() {
               Your <strong className="capitalize">{pendingRequest.requested_tier}</strong>{' '}
               {pendingRequest.plan_period} upgrade is being verified. We'll activate it within 24 hours.
             </p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Rejection banner */}
+      {rejectedRequest && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-start gap-3 p-4 rounded-xl bg-rose-50 border border-rose-200"
+        >
+          <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-rose-800">Payment could not be verified</p>
+            {rejectedRequest.admin_note && (
+              <p className="text-xs text-rose-700 mt-0.5">
+                Reason: <span className="italic">{rejectedRequest.admin_note}</span>
+              </p>
+            )}
+            <div className="flex items-center gap-3 mt-2.5">
+              <button
+                onClick={() => {
+                  setSupportSubject(`Payment rejected — ${rejectedRequest.requested_tier} ${rejectedRequest.plan_period}`);
+                  setSupportDialog(true);
+                }}
+                className="flex items-center gap-1.5 text-xs font-semibold text-rose-700 hover:text-rose-900 underline underline-offset-2"
+              >
+                <MessageSquare className="w-3 h-3" />
+                Contact support
+              </button>
+              <span className="text-rose-300 text-xs">·</span>
+              <span className="text-xs text-rose-600">or pay again below to retry</span>
+            </div>
           </div>
         </motion.div>
       )}
@@ -536,13 +645,20 @@ export default function Account() {
         </div>
       )}
 
-      {/* Dialog */}
+      {/* Payment dialog */}
       <PaymentDialog
         open={upgradeDialog}
         onClose={() => setUpgradeDialog(false)}
         selectedPlan={selectedPlan}
         plans={plans}
         payInfo={payInfo}
+      />
+
+      {/* Support dialog */}
+      <SupportDialog
+        open={supportDialog}
+        onClose={() => setSupportDialog(false)}
+        defaultSubject={supportSubject}
       />
     </div>
   );

@@ -170,7 +170,8 @@ router.patch('/requests/:id/approve', requireAdmin, async (req, res) => {
       .single();
 
     if (fetchErr || !req_) return res.status(404).json({ error: 'Request not found' });
-    if (req_.status !== 'pending') return res.status(400).json({ error: 'Request is not pending' });
+    // Allow re-approving rejected requests (admin mistake correction) but not already-approved ones
+    if (req_.status === 'approved') return res.status(400).json({ error: 'Request is already approved' });
 
     // Calculate expiry: monthly = 1 month, annual = 12 months, or custom
     const months = expiresMonths || (req_.plan_period === 'annual' ? 12 : 1);

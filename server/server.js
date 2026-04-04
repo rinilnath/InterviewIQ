@@ -9,6 +9,7 @@ const documentRoutes = require('./routes/documents.routes');
 const interviewRoutes = require('./routes/interview.routes');
 const adminRoutes = require('./routes/admin.routes');
 const paymentRoutes = require('./routes/payment.routes');
+const supportRoutes = require('./routes/support.routes');
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use('/api/documents', documentRoutes);
 app.use('/api/interview', interviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/support', supportRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
