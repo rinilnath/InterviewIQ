@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
+const path = require('path');
 
 const authRoutes = require('./routes/auth.routes');
 const documentRoutes = require('./routes/documents.routes');
@@ -12,18 +13,21 @@ const paymentRoutes = require('./routes/payment.routes');
 const supportRoutes = require('./routes/support.routes');
 
 const app = express();
+const isProd = process.env.NODE_ENV === 'production';
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // handled by frontend
+}));
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: isProd ? false : (process.env.CLIENT_URL || 'http://localhost:5173'),
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Routes
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/interview', interviewRoutes);
@@ -36,10 +40,22 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
-});
+// Serve React build in production
+if (isProd) {
+  const clientDist = path.join(__dirname, '../client/dist');
+  app.use(express.static(clientDist));
+  // SPA fallback — all non-API routes serve index.html
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientDist, 'index.html'));
+  });
+}
+
+// 404 handler (dev only, prod uses SPA fallback above)
+if (!isProd) {
+  app.use((req, res) => {
+    res.status(404).json({ error: 'Route not found' });
+  });
+}
 
 // Global error handler
 app.use((err, req, res, next) => {
@@ -51,5 +67,5 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`InterviewIQ server running on port ${PORT}`);
+  console.log(`InterviewIQ server running on port ${PORT} [${isProd ? 'production' : 'development'}]`);
 });
