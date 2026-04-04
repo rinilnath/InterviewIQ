@@ -121,7 +121,7 @@ async function sendWelcomeEmail({ name, email, password }) {
   await transport.sendMail({
     from:    `"InterviewIQ" <${process.env.SMTP_USER}>`,
     to:      email,
-    subject: 'You've been granted access to InterviewIQ',
+    subject: "You've been granted access to InterviewIQ",
     text: [
       `Hi ${name},`,
       '',
