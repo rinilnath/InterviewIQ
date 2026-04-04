@@ -15,10 +15,9 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  Mail,
-  MailOpen,
   AlertTriangle,
   RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,6 +80,98 @@ function fmt(n) {
   return new Intl.NumberFormat('en-IN').format(n);
 }
 
+// ─── Deletion Requests ────────────────────────────────────────────────────────
+
+function DeletionRequests() {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['admin', 'deletion-requests'],
+    queryFn:  async () => (await api.get('/admin/deletion-requests')).data,
+    staleTime: 30_000,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (id) => api.post(`/admin/deletion-requests/${id}/approve`),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['admin', 'deletion-requests']);
+      queryClient.invalidateQueries(['admin', 'users']);
+      toast.success('Erased', 'User account and all data have been permanently deleted.');
+    },
+    onError: (err) => toast.error('Failed', err.response?.data?.error || 'Could not process request.'),
+  });
+
+  const requests = data?.requests || [];
+
+  if (isLoading || requests.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h3 className="text-base font-semibold text-zinc-900">Deletion Requests</h3>
+          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-bold">{requests.length}</span>
+        </div>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-800 transition-colors"
+        >
+          <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+      <Card className="border-rose-200 overflow-hidden">
+        <div className="px-4 py-2.5 bg-rose-50 border-b border-rose-100 flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-rose-700">
+            Approving will immediately and permanently erase the user's account and all their data. This cannot be undone.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-100 bg-zinc-50">
+                <th className="text-left px-4 py-3 font-medium text-zinc-500">User</th>
+                <th className="text-left px-4 py-3 font-medium text-zinc-500">Reason</th>
+                <th className="text-left px-4 py-3 font-medium text-zinc-500">Requested</th>
+                <th className="text-right px-4 py-3 font-medium text-zinc-500">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {requests.map((r) => (
+                <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50">
+                  <td className="px-4 py-3">
+                    <p className="font-medium text-zinc-900">{r.users?.name}</p>
+                    <p className="text-xs text-zinc-400">{r.users?.email}</p>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-zinc-500 italic max-w-[200px] truncate" title={r.reason}>
+                    {r.reason || '—'}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
+                    {new Date(r.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => approveMutation.mutate(r.id)}
+                      disabled={approveMutation.isPending}
+                    >
+                      <Trash2 className="w-3 h-3" /> Erase Account
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Email Logs ───────────────────────────────────────────────────────────────
 
 function EmailLogs() {
@@ -129,7 +220,6 @@ function EmailLogs() {
                   <th className="text-left px-4 py-3 font-medium text-zinc-500">Subject</th>
                   <th className="text-left px-4 py-3 font-medium text-zinc-500">Sent</th>
                   <th className="text-left px-4 py-3 font-medium text-zinc-500">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Read</th>
                 </tr>
               </thead>
               <tbody>
@@ -161,18 +251,6 @@ function EmailLogs() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      {log.read_at ? (
-                        <span className="flex items-center gap-1 text-xs text-zinc-500">
-                          <MailOpen className="w-3.5 h-3.5 text-indigo-500" />
-                          {new Date(log.read_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-xs text-amber-600 font-medium">
-                          <Mail className="w-3.5 h-3.5" /> Unread
-                        </span>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -194,6 +272,7 @@ export default function AdminUsers() {
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectNote, setRejectNote] = useState('');
   const [requestsTab, setRequestsTab] = useState('pending'); // 'pending' | 'rejected'
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'users'],
@@ -265,6 +344,16 @@ export default function AdminUsers() {
       toast.success('Rejected', 'Request has been rejected with a note.');
     },
     onError: (err) => toast.error('Rejection failed', err.response?.data?.error || 'Please try again.'),
+  });
+
+  const deleteUserMutation = useMutation({
+    mutationFn: (id) => api.delete(`/admin/users/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['admin', 'users']);
+      toast.success('User deleted', 'User and all their data have been permanently removed.');
+      setDeleteTarget(null);
+    },
+    onError: (err) => toast.error('Delete failed', err.response?.data?.error || 'Could not delete user.'),
   });
 
   const subscriptionMutation = useMutation({
@@ -411,6 +500,14 @@ export default function AdminUsers() {
                           <DropdownMenuItem onClick={() => setResetPasswordUser(u)}>
                             <KeyRound className="w-4 h-4 mr-2" />
                             Reset Password
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-rose-600 focus:text-rose-600 focus:bg-rose-50"
+                            onClick={() => setDeleteTarget(u)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Delete User
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -736,8 +833,33 @@ export default function AdminUsers() {
         </DialogContent>
       </Dialog>
 
+      {/* Deletion Requests */}
+      <DeletionRequests />
+
       {/* Email Logs */}
       <EmailLogs />
+
+      {/* Delete User Confirm Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-rose-600">Delete User — {deleteTarget?.name}</DialogTitle>
+            <DialogDescription>
+              This will permanently delete <strong>{deleteTarget?.email}</strong> and all their data (kits, documents, payment requests, emails). This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteUserMutation.mutate(deleteTarget?.id)}
+              disabled={deleteUserMutation.isPending}
+            >
+              {deleteUserMutation.isPending ? 'Deleting...' : 'Delete Permanently'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Reset Password Dialog */}
       <Dialog open={!!resetPasswordUser} onOpenChange={(o) => !o && setResetPasswordUser(null)}>

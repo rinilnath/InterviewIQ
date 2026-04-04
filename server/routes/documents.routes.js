@@ -8,10 +8,9 @@ const { extractText } = require('../services/document.service');
 
 const router = express.Router();
 
-router.use(verifyToken, requireAdmin);
-
-// GET /api/documents
-router.get('/', async (req, res) => {
+// All routes require authentication; DELETE additionally requires admin
+// GET /api/documents — all authenticated users
+router.get('/', verifyToken, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('documents')
@@ -26,8 +25,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/documents/upload
-router.post('/upload', upload.single('file'), async (req, res) => {
+// POST /api/documents/upload — all authenticated users
+router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -103,8 +102,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// DELETE /api/documents/:id
-router.delete('/:id', async (req, res) => {
+// DELETE /api/documents/:id — admin only
+router.delete('/:id', verifyToken, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
 

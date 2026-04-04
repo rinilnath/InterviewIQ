@@ -127,10 +127,11 @@ export default function App() {
             <Route path="/shared" element={<SharedKits />} />
             <Route path="/account" element={<Account />} />
             <Route path="/kit/:id" element={<KitView />} />
+            <Route path="/knowledge-base" element={<AdminDocuments />} />
+            <Route path="/admin/documents" element={<Navigate to="/knowledge-base" replace />} />
 
             <Route element={<AdminRoute />}>
               <Route path="/admin/users" element={<AdminUsers />} />
-              <Route path="/admin/documents" element={<AdminDocuments />} />
             </Route>
           </Route>
 
