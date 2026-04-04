@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
+const compression = require('compression');
 const path = require('path');
 
 const authRoutes = require('./routes/auth.routes');
@@ -15,7 +16,8 @@ const supportRoutes = require('./routes/support.routes');
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
 
-// Security middleware
+// Compression + security middleware
+app.use(compression());
 app.use(helmet({
   contentSecurityPolicy: false, // handled by frontend
 }));
@@ -43,8 +45,12 @@ app.get('/api/health', (req, res) => {
 // Serve React build in production; 404 handler in development
 if (isProd) {
   const clientDist = path.join(__dirname, '../client/dist');
-  app.use(express.static(clientDist));
-  app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')));
+  const indexHtml  = path.join(clientDist, 'index.html'); // cached — not recomputed per request
+  app.use(express.static(clientDist, {
+    maxAge: '1y',        // immutable hashed assets (JS/CSS chunks)
+    etag: true,
+  }));
+  app.get('*', (req, res) => res.sendFile(indexHtml));
 } else {
   app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
 }
