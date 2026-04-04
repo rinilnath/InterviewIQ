@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   Zap, CheckCircle2, Clock, Crown, Shield,
-  RefreshCw, Globe, Smartphone, ChevronRight, Building2,
+  RefreshCw, Globe, Smartphone, ChevronRight, Building2, AlertCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -284,7 +284,8 @@ export default function Account() {
   const plans          = plansData?.plans || {};
   const tierMeta       = TIER_META[quota?.tierKey] || TIER_META.free;
   const TierIcon       = tierMeta.icon;
-  const pendingRequest = (myRequests || []).find((r) => r.status === 'pending');
+  const pendingRequest  = (myRequests || []).find((r) => r.status === 'pending');
+  const rejectedRequest = (myRequests || []).find((r) => r.status === 'rejected' && !pendingRequest);
 
   const openUpgrade = (key, period) => {
     setSelectedPlan({ key, period });
@@ -371,6 +372,28 @@ export default function Account() {
             <p className="text-xs text-amber-700 mt-0.5">
               Your <strong className="capitalize">{pendingRequest.requested_tier}</strong>{' '}
               {pendingRequest.plan_period} upgrade is being verified. We'll activate it within 24 hours.
+            </p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Rejection banner — shown when most recent request was rejected (and no new pending) */}
+      {rejectedRequest && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-start gap-3 p-4 rounded-xl bg-rose-50 border border-rose-200"
+        >
+          <AlertCircle className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-rose-800">Payment could not be verified</p>
+            {rejectedRequest.admin_note && (
+              <p className="text-xs text-rose-700 mt-0.5">
+                Reason: <span className="italic">{rejectedRequest.admin_note}</span>
+              </p>
+            )}
+            <p className="text-xs text-rose-600 mt-1.5">
+              If you believe this is a mistake, please contact support — or pay again below and we'll re-verify.
             </p>
           </div>
         </motion.div>

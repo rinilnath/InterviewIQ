@@ -86,6 +86,7 @@ export default function AdminUsers() {
   const [subExpiry, setSubExpiry] = useState('');
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [requestsTab, setRequestsTab] = useState('pending'); // 'pending' | 'rejected'
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'users'],
@@ -131,11 +132,18 @@ export default function AdminUsers() {
     refetchInterval: 60_000,
   });
 
+  const { data: rejectedRequests } = useQuery({
+    queryKey: ['payment', 'requests', 'rejected'],
+    queryFn: async () => (await api.get('/payment/requests?status=rejected')).data.requests,
+    staleTime: 30_000,
+  });
+
   const approveMutation = useMutation({
     mutationFn: ({ id }) => api.patch(`/payment/requests/${id}/approve`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries(['payment', 'requests']);
       queryClient.invalidateQueries(['admin', 'users']);
+      setRequestsTab('pending');
       toast.success('Approved', 'User plan has been upgraded.');
     },
     onError: (err) => toast.error('Approval failed', err.response?.data?.error || 'Please try again.'),
@@ -373,70 +381,173 @@ export default function AdminUsers() {
         </SheetContent>
       </Sheet>
 
-      {/* Upgrade Requests Panel */}
-      {(upgradeRequests?.length > 0) && (
+      {/* Payment Requests Panel */}
+      {((upgradeRequests?.length > 0) || (rejectedRequests?.length > 0)) && (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-semibold text-zinc-900">Pending Upgrade Requests</h3>
-            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">
-              {upgradeRequests.length}
-            </span>
-          </div>
-          <Card className="border-amber-200">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-amber-100 bg-amber-50">
-                    <th className="text-left px-4 py-3 font-medium text-zinc-500">User</th>
-                    <th className="text-left px-4 py-3 font-medium text-zinc-500">Plan</th>
-                    <th className="text-left px-4 py-3 font-medium text-zinc-500">Amount</th>
-                    <th className="text-left px-4 py-3 font-medium text-zinc-500">UTR</th>
-                    <th className="text-left px-4 py-3 font-medium text-zinc-500">Method</th>
-                    <th className="text-left px-4 py-3 font-medium text-zinc-500">Requested</th>
-                    <th className="text-right px-4 py-3 font-medium text-zinc-500">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {upgradeRequests.map((r) => (
-                    <tr key={r.id} className="border-b border-zinc-100 last:border-0">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-zinc-900">{r.users?.name}</p>
-                        <p className="text-xs text-zinc-400">{r.users?.email}</p>
-                      </td>
-                      <td className="px-4 py-3 capitalize">
-                        <span className="font-medium">{r.requested_tier}</span>
-                        <span className="text-zinc-400"> · {r.plan_period}</span>
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-zinc-900">₹{fmt(r.amount_inr)}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-zinc-600">{r.utr_number}</td>
-                      <td className="px-4 py-3 capitalize text-zinc-500 text-xs">{r.payment_method.replace('_', ' ')}</td>
-                      <td className="px-4 py-3 text-zinc-500 text-xs">{formatDateShort(r.created_at)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <Button
-                            size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 h-7 px-2 text-xs"
-                            onClick={() => approveMutation.mutate({ id: r.id })}
-                            disabled={approveMutation.isPending}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="border-rose-200 text-rose-600 hover:bg-rose-50 h-7 px-2 text-xs"
-                            onClick={() => { setRejectTarget(r); setRejectNote(''); }}
-                          >
-                            <XCircle className="w-3.5 h-3.5" /> Reject
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {/* Tab header */}
+          <div className="flex items-center gap-3">
+            <h3 className="text-base font-semibold text-zinc-900">Payment Requests</h3>
+            <div className="flex rounded-lg border border-zinc-200 overflow-hidden bg-zinc-50 p-0.5 gap-0.5">
+              <button
+                onClick={() => setRequestsTab('pending')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  requestsTab === 'pending'
+                    ? 'bg-white shadow-sm text-zinc-900 border border-zinc-200'
+                    : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                <Clock className="w-3 h-3" />
+                Pending
+                {(upgradeRequests?.length > 0) && (
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">
+                    {upgradeRequests.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setRequestsTab('rejected')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  requestsTab === 'rejected'
+                    ? 'bg-white shadow-sm text-zinc-900 border border-zinc-200'
+                    : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                <XCircle className="w-3 h-3" />
+                Rejected
+                {(rejectedRequests?.length > 0) && (
+                  <span className="flex items-center justify-center w-4 h-4 rounded-full bg-rose-100 text-rose-600 text-[10px] font-bold">
+                    {rejectedRequests.length}
+                  </span>
+                )}
+              </button>
             </div>
-          </Card>
+          </div>
+
+          {/* Pending tab */}
+          {requestsTab === 'pending' && (
+            upgradeRequests?.length > 0 ? (
+              <Card className="border-amber-200">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-amber-100 bg-amber-50">
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">User</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Plan</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Amount</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Ref</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Method</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Requested</th>
+                        <th className="text-right px-4 py-3 font-medium text-zinc-500">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {upgradeRequests.map((r) => (
+                        <tr key={r.id} className="border-b border-zinc-100 last:border-0">
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-zinc-900">{r.users?.name}</p>
+                            <p className="text-xs text-zinc-400">{r.users?.email}</p>
+                          </td>
+                          <td className="px-4 py-3 capitalize">
+                            <span className="font-medium">{r.requested_tier}</span>
+                            <span className="text-zinc-400"> · {r.plan_period}</span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-zinc-900">₹{fmt(r.amount_inr)}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-zinc-600">{r.utr_number}</td>
+                          <td className="px-4 py-3 capitalize text-zinc-500 text-xs">{r.payment_method.replace('_', ' ')}</td>
+                          <td className="px-4 py-3 text-zinc-500 text-xs">{formatDateShort(r.created_at)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-700 h-7 px-2 text-xs"
+                                onClick={() => approveMutation.mutate({ id: r.id })}
+                                disabled={approveMutation.isPending}
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-rose-200 text-rose-600 hover:bg-rose-50 h-7 px-2 text-xs"
+                                onClick={() => { setRejectTarget(r); setRejectNote(''); }}
+                              >
+                                <XCircle className="w-3.5 h-3.5" /> Reject
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            ) : (
+              <div className="text-center py-8 text-sm text-zinc-400 border border-zinc-100 rounded-xl bg-zinc-50">
+                No pending requests
+              </div>
+            )
+          )}
+
+          {/* Rejected tab */}
+          {requestsTab === 'rejected' && (
+            rejectedRequests?.length > 0 ? (
+              <Card className="border-rose-100">
+                <div className="px-4 py-2.5 bg-rose-50 border-b border-rose-100 flex items-start gap-2">
+                  <XCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-rose-700">
+                    If a payment was rejected by mistake, click <strong>Re-approve</strong> to instantly activate the user's plan — no repayment needed.
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-100 bg-zinc-50">
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">User</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Plan</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Amount</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Rejection reason</th>
+                        <th className="text-left px-4 py-3 font-medium text-zinc-500">Rejected on</th>
+                        <th className="text-right px-4 py-3 font-medium text-zinc-500">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rejectedRequests.map((r) => (
+                        <tr key={r.id} className="border-b border-zinc-100 last:border-0">
+                          <td className="px-4 py-3">
+                            <p className="font-medium text-zinc-900">{r.users?.name}</p>
+                            <p className="text-xs text-zinc-400">{r.users?.email}</p>
+                          </td>
+                          <td className="px-4 py-3 capitalize">
+                            <span className="font-medium">{r.requested_tier}</span>
+                            <span className="text-zinc-400"> · {r.plan_period}</span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-zinc-900">₹{fmt(r.amount_inr)}</td>
+                          <td className="px-4 py-3 text-xs text-rose-600 italic max-w-[200px] truncate" title={r.admin_note}>
+                            {r.admin_note || '—'}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500 text-xs">{formatDateShort(r.reviewed_at || r.created_at)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <Button
+                              size="sm"
+                              className="bg-emerald-600 hover:bg-emerald-700 h-7 px-2 text-xs"
+                              onClick={() => approveMutation.mutate({ id: r.id })}
+                              disabled={approveMutation.isPending}
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5" /> Re-approve
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            ) : (
+              <div className="text-center py-8 text-sm text-zinc-400 border border-zinc-100 rounded-xl bg-zinc-50">
+                No rejected requests
+              </div>
+            )
+          )}
         </div>
       )}
 
