@@ -4,6 +4,7 @@ const supabase = require('../services/supabase.service');
 const { verifyToken } = require('../middleware/auth.middleware');
 const { requireAdmin } = require('../middleware/role.middleware');
 const { TIER_CONFIG } = require('../config/tiers');
+const { sendWelcomeEmail } = require('../services/email.service');
 
 const router = express.Router();
 
@@ -64,6 +65,12 @@ router.post('/users', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // Send welcome email — fire-and-forget (don't block response on email delivery)
+    sendWelcomeEmail({ name, email: data.email, password }).catch((err) =>
+      console.error('Welcome email failed:', err.message)
+    );
+
     res.status(201).json({ user: data });
   } catch (err) {
     console.error('Create user error:', err);

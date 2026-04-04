@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
+const compression = require('compression');
 const path = require('path');
 
 const authRoutes = require('./routes/auth.routes');
@@ -11,11 +12,16 @@ const interviewRoutes = require('./routes/interview.routes');
 const adminRoutes = require('./routes/admin.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const supportRoutes = require('./routes/support.routes');
+const emailRoutes   = require('./routes/email.routes');
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
 
-// Security middleware
+// Trust the first proxy hop (required on Render/Heroku/etc for rate-limiting and IP detection)
+if (isProd) app.set('trust proxy', 1);
+
+// Compression + security middleware
+app.use(compression());
 app.use(helmet({
   contentSecurityPolicy: false, // handled by frontend
 }));
@@ -34,27 +40,24 @@ app.use('/api/interview', interviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/email',  emailRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Serve React build in production
+// Serve React build in production; 404 handler in development
 if (isProd) {
   const clientDist = path.join(__dirname, '../client/dist');
-  app.use(express.static(clientDist));
-  // SPA fallback — all non-API routes serve index.html
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(clientDist, 'index.html'));
-  });
-}
-
-// 404 handler (dev only, prod uses SPA fallback above)
-if (!isProd) {
-  app.use((req, res) => {
-    res.status(404).json({ error: 'Route not found' });
-  });
+  const indexHtml  = path.join(clientDist, 'index.html'); // cached — not recomputed per request
+  app.use(express.static(clientDist, {
+    maxAge: '1y',        // immutable hashed assets (JS/CSS chunks)
+    etag: true,
+  }));
+  app.get('*', (req, res) => res.sendFile(indexHtml));
+} else {
+  app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
 }
 
 // Global error handler
@@ -66,6 +69,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`InterviewIQ server running on port ${PORT} [${isProd ? 'production' : 'development'}]`);
+});
+server.on('error', (err) => {
+  console.error('Failed to start server:', err.message);
+  process.exit(1);
 });

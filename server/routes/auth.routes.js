@@ -87,4 +87,45 @@ router.post('/logout', verifyToken, (req, res) => {
   res.json({ message: 'Logged out successfully' });
 });
 
+// POST /api/auth/change-password
+router.post('/change-password', verifyToken, async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required.' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    }
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ error: 'New password must be different from the current one.' });
+    }
+
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, password_hash')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error || !user) return res.status(404).json({ error: 'User not found.' });
+
+    const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!isValid) return res.status(401).json({ error: 'Current password is incorrect.' });
+
+    const newHash = await bcrypt.hash(newPassword, 12);
+    const { error: updateErr } = await supabase
+      .from('users')
+      .update({ password_hash: newHash })
+      .eq('id', req.user.id);
+
+    if (updateErr) throw updateErr;
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Change password error:', err);
+    res.status(500).json({ error: 'Failed to change password.' });
+  }
+});
+
 module.exports = router;
