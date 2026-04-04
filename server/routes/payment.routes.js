@@ -59,9 +59,6 @@ router.post('/upgrade-request', async (req, res) => {
     if (!planPeriod || !['monthly', 'annual'].includes(planPeriod)) {
       return res.status(400).json({ error: 'Invalid plan period.' });
     }
-    if (!utrNumber || utrNumber.trim().length < 4) {
-      return res.status(400).json({ error: 'UTR / transaction reference is required.' });
-    }
     if (!amountInr || amountInr <= 0) {
       return res.status(400).json({ error: 'Amount paid is required.' });
     }
@@ -90,6 +87,10 @@ router.post('/upgrade-request', async (req, res) => {
       });
     }
 
+    // Auto-generate reference if user didn't provide one (UX: no UTR input required)
+    const ref = utrNumber?.trim() ||
+      `IQ-${req.user.id.slice(0, 8).toUpperCase()}-${Date.now()}`;
+
     const { data, error } = await supabase
       .from('upgrade_requests')
       .insert({
@@ -97,7 +98,7 @@ router.post('/upgrade-request', async (req, res) => {
         requested_tier: requestedTier,
         plan_period:    planPeriod,
         amount_inr:     amountInr,
-        utr_number:     utrNumber.trim(),
+        utr_number:     ref,
         payment_method: paymentMethod || 'upi',
       })
       .select()
