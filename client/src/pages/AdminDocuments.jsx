@@ -12,6 +12,7 @@ import {
   PlusCircle,
   HardDrive,
   File,
+  Download,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -67,6 +68,7 @@ export default function AdminDocuments() {
   const [deleteId, setDeleteId] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [fileError, setFileError] = useState('');
+  const [downloadingId, setDownloadingId] = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['documents'],
@@ -106,6 +108,25 @@ export default function AdminDocuments() {
     },
     onError: () => toast.error('Delete failed', 'Could not delete document.'),
   });
+
+  const handleDownload = async (doc) => {
+    setDownloadingId(doc.id);
+    try {
+      const res = await api.get(`/documents/${doc.id}/download`);
+      const a = document.createElement('a');
+      a.href = res.data.url;
+      a.download = res.data.filename || doc.original_name;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      toast.error('Download failed', 'Could not generate download link.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const form = useForm({
     resolver: zodResolver(uploadSchema),
@@ -224,14 +245,25 @@ export default function AdminDocuments() {
                     <td className="px-4 py-3 text-zinc-500">{doc.users?.name || '—'}</td>
                     <td className="px-4 py-3 text-zinc-500">{formatDateShort(doc.created_at)}</td>
                     <td className="px-4 py-3 text-right">
-                      {isAdmin && (
+                      <div className="flex items-center justify-end gap-1">
                         <button
-                          onClick={() => setDeleteId(doc.id)}
-                          className="text-zinc-300 hover:text-rose-500 transition-colors p-1 rounded"
+                          onClick={() => handleDownload(doc)}
+                          disabled={downloadingId === doc.id}
+                          className="text-zinc-400 hover:text-indigo-600 transition-colors p-1 rounded disabled:opacity-40"
+                          title="Download"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Download className="w-4 h-4" />
                         </button>
-                      )}
+                        {isAdmin && (
+                          <button
+                            onClick={() => setDeleteId(doc.id)}
+                            className="text-zinc-300 hover:text-rose-500 transition-colors p-1 rounded"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </motion.tr>
                 ))}
