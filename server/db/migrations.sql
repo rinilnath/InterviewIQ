@@ -91,6 +91,26 @@ CREATE INDEX IF NOT EXISTS idx_interview_kits_deleted_at
   WHERE deleted_at IS NOT NULL;
 -- ───────────────────────────────────────────────────────────────────────────
 
+-- ─── Upgrade Requests (v1.6.0) ────────────────────────────────────────────
+-- Manual payment flow: user submits UTR, admin approves and upgrades tier.
+CREATE TABLE IF NOT EXISTS upgrade_requests (
+  id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id        UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  requested_tier VARCHAR(20)  NOT NULL CHECK (requested_tier IN ('pro', 'enterprise')),
+  plan_period    VARCHAR(10)  NOT NULL DEFAULT 'monthly' CHECK (plan_period IN ('monthly', 'annual')),
+  amount_inr     INTEGER      NOT NULL,
+  utr_number     VARCHAR(100) NOT NULL,
+  payment_method VARCHAR(20)  NOT NULL DEFAULT 'upi' CHECK (payment_method IN ('upi', 'bank_transfer')),
+  status         VARCHAR(20)  NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+  admin_note     TEXT,
+  reviewed_at    TIMESTAMPTZ,
+  reviewed_by    UUID         REFERENCES users(id),
+  created_at     TIMESTAMPTZ  DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_upgrade_requests_user_id ON upgrade_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_upgrade_requests_status  ON upgrade_requests(status);
+-- ───────────────────────────────────────────────────────────────────────────
+
 -- ─── Subscription Tiers (v1.5.0) ──────────────────────────────────────────
 -- Per-user monthly generation quota. Admin role bypasses all limits.
 ALTER TABLE users

@@ -10,6 +10,7 @@ import {
   BrainCircuit,
   Trash2,
   Globe,
+  UserCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
@@ -24,6 +25,7 @@ const navItems = [
   { to: '/history', label: 'History', icon: History },
   { to: '/shared', label: 'Shared Kits', icon: Globe },
   { to: '/trash', label: 'Trash', icon: Trash2 },
+  { to: '/account', label: 'Account', icon: UserCircle },
 ];
 
 const adminItems = [

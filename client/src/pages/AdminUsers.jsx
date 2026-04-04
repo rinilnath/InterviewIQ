@@ -12,6 +12,9 @@ import {
   KeyRound,
   Shield,
   Zap,
+  CheckCircle2,
+  XCircle,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +73,10 @@ const TIER_COLORS = {
   enterprise: 'bg-violet-100 text-violet-700',
 };
 
+function fmt(n) {
+  return new Intl.NumberFormat('en-IN').format(n);
+}
+
 export default function AdminUsers() {
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
@@ -77,6 +84,8 @@ export default function AdminUsers() {
   const [subscriptionUser, setSubscriptionUser] = useState(null);
   const [subTier, setSubTier] = useState('free');
   const [subExpiry, setSubExpiry] = useState('');
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectNote, setRejectNote] = useState('');
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin', 'users'],
@@ -114,6 +123,33 @@ export default function AdminUsers() {
       resetForm.reset();
     },
     onError: () => toast.error('Reset failed', 'Could not reset password.'),
+  });
+
+  const { data: upgradeRequests } = useQuery({
+    queryKey: ['payment', 'requests', 'pending'],
+    queryFn: async () => (await api.get('/payment/requests?status=pending')).data.requests,
+    refetchInterval: 60_000,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: ({ id }) => api.patch(`/payment/requests/${id}/approve`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['payment', 'requests']);
+      queryClient.invalidateQueries(['admin', 'users']);
+      toast.success('Approved', 'User plan has been upgraded.');
+    },
+    onError: (err) => toast.error('Approval failed', err.response?.data?.error || 'Please try again.'),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, note }) => api.patch(`/payment/requests/${id}/reject`, { adminNote: note }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['payment', 'requests']);
+      setRejectTarget(null);
+      setRejectNote('');
+      toast.success('Rejected', 'Request has been rejected with a note.');
+    },
+    onError: (err) => toast.error('Rejection failed', err.response?.data?.error || 'Please try again.'),
   });
 
   const subscriptionMutation = useMutation({
@@ -336,6 +372,103 @@ export default function AdminUsers() {
           </form>
         </SheetContent>
       </Sheet>
+
+      {/* Upgrade Requests Panel */}
+      {(upgradeRequests?.length > 0) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold text-zinc-900">Pending Upgrade Requests</h3>
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-amber-100 text-amber-700 text-xs font-bold">
+              {upgradeRequests.length}
+            </span>
+          </div>
+          <Card className="border-amber-200">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-amber-100 bg-amber-50">
+                    <th className="text-left px-4 py-3 font-medium text-zinc-500">User</th>
+                    <th className="text-left px-4 py-3 font-medium text-zinc-500">Plan</th>
+                    <th className="text-left px-4 py-3 font-medium text-zinc-500">Amount</th>
+                    <th className="text-left px-4 py-3 font-medium text-zinc-500">UTR</th>
+                    <th className="text-left px-4 py-3 font-medium text-zinc-500">Method</th>
+                    <th className="text-left px-4 py-3 font-medium text-zinc-500">Requested</th>
+                    <th className="text-right px-4 py-3 font-medium text-zinc-500">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {upgradeRequests.map((r) => (
+                    <tr key={r.id} className="border-b border-zinc-100 last:border-0">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-zinc-900">{r.users?.name}</p>
+                        <p className="text-xs text-zinc-400">{r.users?.email}</p>
+                      </td>
+                      <td className="px-4 py-3 capitalize">
+                        <span className="font-medium">{r.requested_tier}</span>
+                        <span className="text-zinc-400"> · {r.plan_period}</span>
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-zinc-900">₹{fmt(r.amount_inr)}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-zinc-600">{r.utr_number}</td>
+                      <td className="px-4 py-3 capitalize text-zinc-500 text-xs">{r.payment_method.replace('_', ' ')}</td>
+                      <td className="px-4 py-3 text-zinc-500 text-xs">{formatDateShort(r.created_at)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 h-7 px-2 text-xs"
+                            onClick={() => approveMutation.mutate({ id: r.id })}
+                            disabled={approveMutation.isPending}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-rose-200 text-rose-600 hover:bg-rose-50 h-7 px-2 text-xs"
+                            onClick={() => { setRejectTarget(r); setRejectNote(''); }}
+                          >
+                            <XCircle className="w-3.5 h-3.5" /> Reject
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Reject Dialog */}
+      <Dialog open={!!rejectTarget} onOpenChange={(o) => !o && setRejectTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reject Upgrade Request</DialogTitle>
+            <DialogDescription>
+              Provide a reason — this will be shown to the user.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Reason <span className="text-rose-500">*</span></Label>
+            <Input
+              placeholder="e.g. UTR not found, wrong amount, duplicate request"
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectTarget(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={() => rejectMutation.mutate({ id: rejectTarget?.id, note: rejectNote })}
+              disabled={!rejectNote.trim() || rejectMutation.isPending}
+            >
+              {rejectMutation.isPending ? 'Rejecting...' : 'Confirm Reject'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Set Plan Dialog */}
       <Dialog open={!!subscriptionUser} onOpenChange={(o) => !o && setSubscriptionUser(null)}>
