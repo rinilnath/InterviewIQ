@@ -58,6 +58,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`InterviewIQ server running on port ${PORT} [${isProd ? 'production' : 'development'}]`);
+});
+server.on('error', (err) => {
+  console.error('Failed to start server:', err.message);
+  process.exit(1);
 });
