@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const supabase = require('../services/supabase.service');
 const { verifyToken } = require('../middleware/auth.middleware');
 const { requireAdmin } = require('../middleware/role.middleware');
+const { TIER_CONFIG } = require('../config/tiers');
 
 const router = express.Router();
 
@@ -13,7 +14,7 @@ router.get('/users', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, name, email, role, is_active, created_at, created_by')
+      .select('id, name, email, role, is_active, subscription_tier, subscription_expires_at, created_at, created_by')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -104,6 +105,63 @@ router.patch('/users/:id', async (req, res) => {
   } catch (err) {
     console.error('Update user error:', err);
     res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+// PATCH /api/admin/users/:id/subscription
+router.patch('/users/:id/subscription', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subscription_tier, subscription_expires_at } = req.body;
+
+    if (!subscription_tier || !Object.keys(TIER_CONFIG).includes(subscription_tier)) {
+      return res.status(400).json({
+        error: `Invalid tier. Must be one of: ${Object.keys(TIER_CONFIG).join(', ')}`,
+      });
+    }
+
+    const updates = { subscription_tier };
+    // null = never expires; a date string = time-boxed access
+    updates.subscription_expires_at = subscription_expires_at || null;
+
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', id)
+      .select('id, name, email, role, subscription_tier, subscription_expires_at')
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'User not found' });
+
+    res.json({ user: data });
+  } catch (err) {
+    console.error('Update subscription error:', err);
+    res.status(500).json({ error: 'Failed to update subscription' });
+  }
+});
+
+// GET /api/admin/users/:id/usage — view a user's current month kit usage
+router.get('/users/:id/usage', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
+
+    const { count, error } = await supabase
+      .from('interview_kits')
+      .select('id', { count: 'exact', head: true })
+      .eq('generated_by', id)
+      .gte('created_at', startOfMonth)
+      .lt('created_at', nextMonth)
+      .in('status', ['generating', 'completed']);
+
+    if (error) throw error;
+    res.json({ used: count || 0 });
+  } catch (err) {
+    console.error('Get usage error:', err);
+    res.status(500).json({ error: 'Failed to fetch usage' });
   }
 });
 
