@@ -31,15 +31,15 @@ router.get('/plans', (req, res) => {
 });
 
 // GET /api/payment/info — bank/UPI details from environment variables
-// NEVER hardcode account numbers here — set them in .env
+// accountName is intentionally excluded — money routes via UPI ID / account number alone
 router.get('/info', (req, res) => {
   const info = {
     upiId:         process.env.PAYMENT_UPI_ID         || null,
-    accountName:   process.env.PAYMENT_ACCOUNT_NAME   || null,
     accountNumber: process.env.PAYMENT_ACCOUNT_NUMBER || null,
     ifsc:          process.env.PAYMENT_IFSC           || null,
     bankName:      process.env.PAYMENT_BANK_NAME      || 'SBI',
     bankBranch:    process.env.PAYMENT_BANK_BRANCH    || null,
+    swift:         process.env.PAYMENT_SWIFT_CODE     || null,
   };
   // Ensure at least one payment method is configured
   if (!info.upiId && !info.accountNumber) {
