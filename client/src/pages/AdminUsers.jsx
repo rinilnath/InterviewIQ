@@ -15,6 +15,10 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Mail,
+  MailOpen,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -75,6 +79,109 @@ const TIER_COLORS = {
 
 function fmt(n) {
   return new Intl.NumberFormat('en-IN').format(n);
+}
+
+// ─── Email Logs ───────────────────────────────────────────────────────────────
+
+function EmailLogs() {
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['email', 'logs'],
+    queryFn:  async () => (await api.get('/email/logs?limit=100')).data,
+    staleTime: 30_000,
+  });
+
+  const logs = data?.logs || [];
+
+  const typeLabel  = { welcome: 'Welcome', support: 'Support' };
+  const typeBadge  = { welcome: 'bg-indigo-100 text-indigo-700', support: 'bg-zinc-100 text-zinc-600' };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h3 className="text-base font-semibold text-zinc-900">Email Logs</h3>
+          <span className="text-xs text-zinc-400">{logs.length} recent</span>
+        </div>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-800 transition-colors"
+        >
+          <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="h-24 rounded-xl bg-zinc-50 border border-zinc-100 animate-pulse" />
+      ) : logs.length === 0 ? (
+        <div className="text-center py-8 text-sm text-zinc-400 border border-zinc-100 rounded-xl bg-zinc-50">
+          No emails sent yet
+        </div>
+      ) : (
+        <Card className="border-zinc-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 bg-zinc-50">
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Type</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Recipient</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Subject</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Sent</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Read</th>
+                </tr>
+              </thead>
+              <tbody>
+                {logs.map((log) => (
+                  <tr key={log.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50">
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${typeBadge[log.email_type] || 'bg-zinc-100 text-zinc-600'}`}>
+                        {typeLabel[log.email_type] || log.email_type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-zinc-900 font-medium">{log.recipient_name || '—'}</p>
+                      <p className="text-xs text-zinc-400">{log.recipient_email}</p>
+                    </td>
+                    <td className="px-4 py-3 text-zinc-600 max-w-[200px] truncate" title={log.subject}>
+                      {log.subject}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
+                      {new Date(log.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="px-4 py-3">
+                      {log.status === 'failed' ? (
+                        <span className="flex items-center gap-1 text-xs font-medium text-rose-600" title={log.error}>
+                          <AlertTriangle className="w-3 h-3" /> Failed
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+                          <CheckCircle2 className="w-3 h-3" /> Sent
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {log.read_at ? (
+                        <span className="flex items-center gap-1 text-xs text-zinc-500">
+                          <MailOpen className="w-3.5 h-3.5 text-indigo-500" />
+                          {new Date(log.read_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-amber-600 font-medium">
+                          <Mail className="w-3.5 h-3.5" /> Unread
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
 }
 
 export default function AdminUsers() {
@@ -628,6 +735,9 @@ export default function AdminUsers() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Email Logs */}
+      <EmailLogs />
 
       {/* Reset Password Dialog */}
       <Dialog open={!!resetPasswordUser} onOpenChange={(o) => !o && setResetPasswordUser(null)}>

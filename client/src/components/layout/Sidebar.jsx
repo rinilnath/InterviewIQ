@@ -58,17 +58,17 @@ export function Sidebar() {
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
   return (
-    <aside className="hidden md:flex flex-col w-64 min-h-screen bg-white border-r border-zinc-200 shrink-0">
+    <aside className="hidden md:flex flex-col w-64 h-screen sticky top-0 bg-white border-r border-zinc-200 shrink-0">
       {/* Logo */}
-      <div className="flex items-center gap-2.5 px-6 py-5 border-b border-zinc-100">
+      <div className="flex items-center gap-2.5 px-6 py-5 border-b border-zinc-100 shrink-0">
         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600">
           <BrainCircuit className="w-5 h-5 text-white" />
         </div>
         <span className="text-lg font-semibold text-zinc-900 tracking-tight">InterviewIQ</span>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      {/* Navigation — scrollable if many items */}
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {navItems.map((item) => (
           <NavLink key={item.to} item={item} isActive={isActive(item.to)} />
         ))}
@@ -85,8 +85,8 @@ export function Sidebar() {
         )}
       </nav>
 
-      {/* User section */}
-      <div className="px-3 py-4 border-t border-zinc-100 space-y-2">
+      {/* User section — always at bottom, never scrolls away */}
+      <div className="px-3 py-4 border-t border-zinc-100 space-y-2 shrink-0">
         <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-zinc-50">
           <div className="flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-sm font-semibold shrink-0">
             {user?.name?.charAt(0)?.toUpperCase() || 'U'}

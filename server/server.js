@@ -12,6 +12,7 @@ const interviewRoutes = require('./routes/interview.routes');
 const adminRoutes = require('./routes/admin.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const supportRoutes = require('./routes/support.routes');
+const emailRoutes   = require('./routes/email.routes');
 
 const app = express();
 const isProd = process.env.NODE_ENV === 'production';
@@ -39,6 +40,7 @@ app.use('/api/interview', interviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/support', supportRoutes);
+app.use('/api/email',  emailRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
