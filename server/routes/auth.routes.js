@@ -158,6 +158,23 @@ router.post('/deletion-request', verifyToken, async (req, res) => {
   }
 });
 
+// DELETE /api/auth/deletion-request — cancel the user's own pending request
+router.delete('/deletion-request', verifyToken, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from('account_deletion_requests')
+      .delete()
+      .eq('user_id', req.user.id)
+      .eq('status', 'pending');
+
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Cancel deletion request error:', err);
+    res.status(500).json({ error: 'Failed to cancel deletion request.' });
+  }
+});
+
 // GET /api/auth/deletion-request — check current user's pending request
 router.get('/deletion-request', verifyToken, async (req, res) => {
   try {

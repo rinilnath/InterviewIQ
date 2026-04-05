@@ -463,6 +463,15 @@ export default function Account() {
     onError: (err) => toast.error('Failed', err.response?.data?.error || 'Could not submit request.'),
   });
 
+  const cancelDeletionMutation = useMutation({
+    mutationFn: () => api.delete('/auth/deletion-request'),
+    onSuccess: () => {
+      refetchDeletion();
+      toast.success('Request cancelled', 'Your account deletion request has been withdrawn.');
+    },
+    onError: (err) => toast.error('Failed', err.response?.data?.error || 'Could not cancel request.'),
+  });
+
   const pendingDeletion = deletionReqData?.request;
 
   const plans          = plansData?.plans || {};
@@ -766,12 +775,21 @@ export default function Account() {
         {pendingDeletion ? (
           <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
             <Clock className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-            <div>
+            <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-rose-700">Deletion request pending</p>
               <p className="text-xs text-rose-500 mt-0.5">
                 Submitted {new Date(pendingDeletion.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}. An admin will review it shortly.
               </p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 text-xs border-rose-300 text-rose-600 hover:bg-rose-100"
+              onClick={() => cancelDeletionMutation.mutate()}
+              disabled={cancelDeletionMutation.isPending}
+            >
+              {cancelDeletionMutation.isPending ? 'Cancelling…' : 'Cancel request'}
+            </Button>
           </div>
         ) : showDeletionForm ? (
           <div className="rounded-xl border border-rose-200 bg-white overflow-hidden">
