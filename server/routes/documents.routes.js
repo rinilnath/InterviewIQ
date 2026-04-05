@@ -14,7 +14,7 @@ router.get('/', verifyToken, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('documents')
-      .select('id, filename, original_name, file_type, label, document_type, file_size_bytes, storage_path, uploaded_by, created_at')
+      .select('id, filename, original_name, file_type, label, document_type, file_size_bytes, storage_path, uploaded_by, created_at, users!uploaded_by(name)')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
@@ -99,6 +99,30 @@ router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
   } catch (err) {
     console.error('Upload error:', err);
     res.status(500).json({ error: err.message || 'Failed to upload document' });
+  }
+});
+
+// GET /api/documents/:id/download — all authenticated users; returns a signed URL
+router.get('/:id/download', verifyToken, async (req, res) => {
+  try {
+    const { data: doc, error: fetchErr } = await supabase
+      .from('documents')
+      .select('id, storage_path, original_name')
+      .eq('id', req.params.id)
+      .single();
+
+    if (fetchErr || !doc) return res.status(404).json({ error: 'Document not found' });
+
+    const { data: signed, error: signErr } = await supabase.storage
+      .from(process.env.SUPABASE_STORAGE_BUCKET || 'interviewiq-docs')
+      .createSignedUrl(doc.storage_path, 60); // 60-second expiry
+
+    if (signErr) throw signErr;
+
+    res.json({ url: signed.signedUrl, filename: doc.original_name });
+  } catch (err) {
+    console.error('Download error:', err);
+    res.status(500).json({ error: 'Failed to generate download link' });
   }
 });
 

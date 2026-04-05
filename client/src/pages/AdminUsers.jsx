@@ -89,6 +89,7 @@ function DeletionRequests() {
     queryKey: ['admin', 'deletion-requests'],
     queryFn:  async () => (await api.get('/admin/deletion-requests')).data,
     staleTime: 30_000,
+    refetchInterval: 60_000, // poll every minute so requests appear without manual refresh
   });
 
   const approveMutation = useMutation({
@@ -103,14 +104,14 @@ function DeletionRequests() {
 
   const requests = data?.requests || [];
 
-  if (isLoading || requests.length === 0) return null;
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h3 className="text-base font-semibold text-zinc-900">Deletion Requests</h3>
-          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-bold">{requests.length}</span>
+          {requests.length > 0 && (
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-rose-100 text-rose-600 text-[10px] font-bold">{requests.length}</span>
+          )}
         </div>
         <button
           onClick={() => refetch()}
@@ -121,53 +122,62 @@ function DeletionRequests() {
           Refresh
         </button>
       </div>
-      <Card className="border-rose-200 overflow-hidden">
-        <div className="px-4 py-2.5 bg-rose-50 border-b border-rose-100 flex items-start gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
-          <p className="text-xs text-rose-700">
-            Approving will immediately and permanently erase the user's account and all their data. This cannot be undone.
-          </p>
+
+      {isLoading ? (
+        <div className="h-16 rounded-xl bg-zinc-50 border border-zinc-100 animate-pulse" />
+      ) : requests.length === 0 ? (
+        <div className="text-center py-6 text-sm text-zinc-400 border border-zinc-100 rounded-xl bg-zinc-50">
+          No pending deletion requests
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-100 bg-zinc-50">
-                <th className="text-left px-4 py-3 font-medium text-zinc-500">User</th>
-                <th className="text-left px-4 py-3 font-medium text-zinc-500">Reason</th>
-                <th className="text-left px-4 py-3 font-medium text-zinc-500">Requested</th>
-                <th className="text-right px-4 py-3 font-medium text-zinc-500">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((r) => (
-                <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50">
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-zinc-900">{r.users?.name}</p>
-                    <p className="text-xs text-zinc-400">{r.users?.email}</p>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-zinc-500 italic max-w-[200px] truncate" title={r.reason}>
-                    {r.reason || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
-                    {new Date(r.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="h-7 px-2 text-xs"
-                      onClick={() => approveMutation.mutate(r.id)}
-                      disabled={approveMutation.isPending}
-                    >
-                      <Trash2 className="w-3 h-3" /> Erase Account
-                    </Button>
-                  </td>
+      ) : (
+        <Card className="border-rose-200 overflow-hidden">
+          <div className="px-4 py-2.5 bg-rose-50 border-b border-rose-100 flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-rose-700">
+              Approving will immediately and permanently erase the user's account and all their data. This cannot be undone.
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 bg-zinc-50">
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">User</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Reason</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Requested</th>
+                  <th className="text-right px-4 py-3 font-medium text-zinc-500">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              </thead>
+              <tbody>
+                {requests.map((r) => (
+                  <tr key={r.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-zinc-900">{r.users?.name}</p>
+                      <p className="text-xs text-zinc-400">{r.users?.email}</p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-zinc-500 italic max-w-[200px] truncate" title={r.reason}>
+                      {r.reason || '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-zinc-500 whitespace-nowrap">
+                      {new Date(r.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => approveMutation.mutate(r.id)}
+                        disabled={approveMutation.isPending}
+                      >
+                        <Trash2 className="w-3 h-3" /> Erase Account
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

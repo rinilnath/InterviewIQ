@@ -268,17 +268,22 @@ router.post('/deletion-requests/:id/approve', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Get the deletion request
-    const { data: request, error: fetchErr } = await supabase
+    // Atomic claim: only succeeds if status is still 'pending'.
+    // If two admins click simultaneously, only the first UPDATE matches the .eq('status','pending')
+    // filter and gets a row back; the second gets null and returns 409.
+    const { data: claimed, error: claimErr } = await supabase
       .from('account_deletion_requests')
-      .select('id, user_id, status')
+      .update({ status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: req.user.id })
       .eq('id', id)
+      .eq('status', 'pending')
+      .select('user_id')
       .single();
 
-    if (fetchErr || !request) return res.status(404).json({ error: 'Request not found' });
-    if (request.status !== 'pending') return res.status(400).json({ error: 'Request already processed' });
+    if (claimErr || !claimed) {
+      return res.status(409).json({ error: 'Request not found or already processed by another admin' });
+    }
 
-    const userId = request.user_id;
+    const userId = claimed.user_id;
 
     // Cascade-delete all user data (same order as admin delete)
     const tables = [
