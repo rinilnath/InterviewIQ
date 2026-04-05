@@ -249,14 +249,27 @@ router.post('/users/:id/reset-password', async (req, res) => {
 // GET /api/admin/deletion-requests — list all pending deletion requests
 router.get('/deletion-requests', async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data: requests, error } = await supabase
       .from('account_deletion_requests')
-      .select('id, reason, status, created_at, user_id, users(name, email)')
+      .select('id, reason, status, created_at, user_id')
       .eq('status', 'pending')
       .order('created_at', { ascending: true });
 
     if (error) throw error;
-    res.json({ requests: data });
+
+    // Enrich with user info (separate query — avoids PostgREST FK join issues)
+    const userIds = [...new Set(requests.map((r) => r.user_id).filter(Boolean))];
+    let usersMap = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name, email')
+        .in('id', userIds);
+      if (users) users.forEach((u) => { usersMap[u.id] = u; });
+    }
+
+    const enriched = requests.map((r) => ({ ...r, users: usersMap[r.user_id] || null }));
+    res.json({ requests: enriched });
   } catch (err) {
     console.error('List deletion requests error:', err);
     res.status(500).json({ error: 'Failed to fetch deletion requests' });
