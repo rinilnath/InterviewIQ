@@ -186,10 +186,14 @@ router.get('/quota', async (req, res) => {
 // POST /api/interview/generate
 router.post('/generate', generateLimiter, async (req, res) => {
   try {
-    const { jdText, seniorityLevel, techStack, customExpectations, useKnowledgeBase, kbPercentage = 25, previousKitId } = req.body;
+    const { jdText, seniorityLevel, techStack, customExpectations, useKnowledgeBase, kbPercentage = 25, previousKitId,
+            candidateName, candidateExperienceYears, candidateRole } = req.body;
 
     if (!jdText || !seniorityLevel || !techStack) {
       return res.status(400).json({ error: 'JD text, seniority level, and tech stack are required' });
+    }
+    if (!candidateName?.trim() || candidateExperienceYears == null || !candidateRole?.trim()) {
+      return res.status(400).json({ error: 'Candidate name, years of experience, and role are required' });
     }
     if (!Array.isArray(techStack) || techStack.length === 0) {
       return res.status(400).json({ error: 'Tech stack must be a non-empty array' });
@@ -254,6 +258,10 @@ router.post('/generate', generateLimiter, async (req, res) => {
         output_json: null,
         status: 'generating',
         is_completed: false,
+        candidate_name: candidateName.trim(),
+        candidate_experience_years: parseInt(candidateExperienceYears, 10),
+        candidate_role: candidateRole.trim(),
+        candidate_status: 'in_progress',
       })
       .select()
       .single();
@@ -554,6 +562,82 @@ router.get('/stats', async (req, res) => {
   } catch (err) {
     console.error('Stats error:', err);
     res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// GET /api/interview/results — all kits with candidate info, visible to all authenticated users
+router.get('/results', async (req, res) => {
+  try {
+    const { data: kits, error } = await supabase
+      .from('interview_kits')
+      .select('id, kit_title, seniority_level, candidate_name, candidate_experience_years, candidate_role, candidate_status, output_json, generated_by, created_at, is_completed, status')
+      .not('candidate_name', 'is', null)
+      .in('status', ['completed', 'generating'])   // exclude failed/cancelled
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Enrich with interviewer names (separate query avoids FK join issues)
+    const userIds = [...new Set((kits || []).map((k) => k.generated_by).filter(Boolean))];
+    let usersMap = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('id, name')
+        .in('id', userIds);
+      if (users) users.forEach((u) => { usersMap[u.id] = u.name; });
+    }
+
+    // Compute overall score from output_json sections
+    const results = (kits || []).map((k) => {
+      let overallScore = null;
+      if (k.output_json?.sections) {
+        const all = k.output_json.sections.flatMap((s) => s.questions || []);
+        const scored = all.filter((q) => q.score != null);
+        if (scored.length > 0) {
+          overallScore = (scored.reduce((sum, q) => sum + Number(q.score), 0) / scored.length).toFixed(1);
+        }
+      }
+      return {
+        id: k.id,
+        kit_title: k.kit_title,
+        seniority_level: k.seniority_level,
+        candidate_name: k.candidate_name,
+        candidate_experience_years: k.candidate_experience_years,
+        candidate_role: k.candidate_role,
+        candidate_status: k.candidate_status,
+        overall_score: overallScore,
+        interviewed_by: usersMap[k.generated_by] || '—',
+        interview_date: k.created_at,
+        is_completed: k.is_completed,
+      };
+    });
+
+    res.json({ results });
+  } catch (err) {
+    console.error('Results error:', err);
+    res.status(500).json({ error: 'Failed to fetch interview results' });
+  }
+});
+
+// PATCH /api/interview/:id/candidate-status — any authenticated user can update pipeline status
+router.patch('/:id/candidate-status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { candidateStatus } = req.body;
+    const valid = ['in_progress', 'selected', 'rejected', 'on_hold'];
+    if (!valid.includes(candidateStatus)) {
+      return res.status(400).json({ error: `Status must be one of: ${valid.join(', ')}` });
+    }
+    const { error } = await supabase
+      .from('interview_kits')
+      .update({ candidate_status: candidateStatus })
+      .eq('id', id);
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Candidate status update error:', err);
+    res.status(500).json({ error: 'Failed to update candidate status' });
   }
 });
 
