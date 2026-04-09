@@ -47,12 +47,17 @@ function categorizeError(err) {
 }
 
 async function runGenerationJob(kitId, params) {
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(Object.assign(new Error('timed out'), { message: 'timeout' })), GENERATION_TIMEOUT_MS)
-  );
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(Object.assign(new Error('timed out'), { message: 'timeout' })),
+      GENERATION_TIMEOUT_MS,
+    );
+  });
   try {
     const startedAt = Date.now();
     const kitOutput = await Promise.race([generateInterviewKit(params), timeout]);
+    clearTimeout(timeoutId);
     const generationSeconds = Math.round((Date.now() - startedAt) / 1000);
 
     // Check if user cancelled the job while Claude was running
@@ -79,6 +84,7 @@ async function runGenerationJob(kitId, params) {
     if (error) throw error;
     console.log(`[job] Kit ${kitId} completed: ${kitOutput.kit_title}`);
   } catch (err) {
+    clearTimeout(timeoutId);
     // Don't overwrite a user-initiated cancellation with a failure status
     const { data: current } = await supabase
       .from('interview_kits')
@@ -274,7 +280,7 @@ router.post('/generate', generateLimiter, async (req, res) => {
       jdText, seniorityLevel, techStack, customExpectations,
       knowledgeBaseDocs, isRegenerate, previousQuestions,
       kbPercentage: useKnowledgeBase ? Math.min(100, Math.max(25, parseInt(kbPercentage) || 25)) : 0,
-    });
+    }).catch((err) => console.error('[job] Unhandled generation error for kit', newKit.id, err.message));
   } catch (err) {
     console.error('Generate interview error:', err);
     res.status(500).json({ error: err.message || 'Failed to start kit generation' });
