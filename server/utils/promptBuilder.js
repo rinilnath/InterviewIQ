@@ -106,17 +106,27 @@ PROBLEM SOLVING SECTION RULES (CRITICAL):
 - The question text for fix_the_code should be: "Find and fix the bug(s) in the following code:"
 - Remaining Problem Solving questions should be algorithmic or design problem questions
 
-ANSWER FORMAT RULES — TOKEN BUDGET (CRITICAL, follow exactly):
-- strong_answer ONLY — do NOT generate weak_answer or average_answer fields at all
-- strong_answer: Write in FIRST PERSON as the expert candidate. Structure as a mini-lesson:
-  1. One-line crisp definition of the core concept (use **bold** for key terms)
-  2. Explain the underlying mechanism — why it works this way
-  3. Show HOW you apply it: a focused code block OR a concrete real-world scenario
-  4. One sentence on a practitioner pitfall or trade-off
-  Target: 100-150 words of prose. When code is needed add ONE fenced block (use correct language tag, e.g. \`\`\`python) with inline comments on key lines. Do NOT exceed 200 words total prose.
-- Do NOT use rubric language ("A strong candidate would...") — speak directly as the candidate
-- For fix_the_code strong_answer: name each bug + location, explain root-cause concept in 1-2 sentences, show corrected code in a fenced block with fix comments
-- Voice: "So the key concept here is...", "Let me walk through how I'd approach this...", "The thing that trips most people up here is..."
+ANSWER FORMAT RULES — THREE TIERS (CRITICAL, follow exactly):
+Generate exactly three answer tiers for every question: weak_answer, good_answer, best_answer. No other answer fields.
+
+- weak_answer: 1–2 sentences. What a candidate says when they have heard the term but do not truly understand it. Surface-level phrasing, misses the key mechanism or trade-off entirely. Sounds plausible but is incomplete or slightly wrong. Do NOT make it obviously wrong — it should feel like a real weak interview answer.
+
+- good_answer: 3–4 sentences. Correct, clear understanding. Names the key concept, explains how it works, mentions the main trade-off or implication. Solid and accurate but does not go beyond the textbook explanation. No code needed unless essential.
+
+- best_answer: 4–6 lines. Write in FIRST PERSON as an experienced practitioner. Structure:
+  1. Name the core mechanism in one crisp sentence (use **bold** for key terms)
+  2. Explain WHY it works this way — the design decision or underlying principle
+  3. Give a concrete real-world consequence, failure mode, or trade-off that only surfaces in production
+  4. One sharp closing sentence showing depth (e.g. an edge case, a counter-intuitive implication, or a pitfall)
+  When code is genuinely needed, add ONE fenced block (correct language tag, e.g. \`\`\`python) with inline comments. Do NOT exceed 220 words total for best_answer.
+  Voice: "The key thing here is...", "What actually happens is...", "The pitfall most people hit is..."
+
+For fix_the_code questions, apply the tiers as follows:
+- weak_answer: spots one bug or describes it vaguely without explaining why it is wrong
+- good_answer: correctly identifies all bugs and fixes them with a brief explanation
+- best_answer: identifies and fixes all bugs, explains the root-cause concept behind each one, shows corrected code in a fenced block with fix comments, and notes the production impact if this bug shipped undetected
+
+Do NOT use rubric language ("A strong candidate would...") in any tier — state it as if answering directly.
 
 OUTPUT REQUIREMENTS:
 - Distribute questions proportionally across sections based on weight percentages
@@ -127,7 +137,8 @@ OUTPUT REQUIREMENTS:
 - code_snippet is required for fix_the_code questions, must be null for standard questions
 
 ANSWER QUALITY REMINDERS (apply to every question without exception):
-- strong_answer must always feel like the candidate is speaking live in an interview room, not reading from a textbook
+- best_answer must always feel like the candidate is speaking live in an interview room, not reading from a textbook
+- weak_answer must sound like a real (plausible but shallow) interview response — not obviously wrong, just incomplete
 - If the tech stack is Python, use Python code fences; if JavaScript, use JavaScript; always match the language to the stack
 - Do not repeat the question text verbatim inside any answer field
 - For fix_the_code questions the code_snippet field is REQUIRED and must be a realistic, real-world-looking snippet with intentional bugs only
@@ -150,7 +161,9 @@ REQUIRED JSON OUTPUT SCHEMA (return ONLY this JSON, no other text):
           "code_snippet": "string | null",
           "source": "AI" | "KB",
           "kb_label": "string | null",
-          "strong_answer": "string",
+          "weak_answer": "string",
+          "good_answer": "string",
+          "best_answer": "string",
           "score": null,
           "notes": ""
         }
