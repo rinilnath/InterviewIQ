@@ -85,11 +85,19 @@ const SENIORITY_CONFIG = {
 // ---------------------------------------------------------------------------
 const STATIC_RULES = `
 CORE TECHNOLOGY SECTION RULES (CRITICAL):
-- All "Core Technology" questions MUST be hands-on and practical — ask the candidate to write code, debug a snippet, explain their implementation approach, or reason through a real technical problem
-- Do NOT generate theoretical definitions, history lessons, or "what is X" questions for Core Technology
-- Good examples: "Write a function that...", "How would you implement X in [stack]?", "What happens step-by-step when you call X?", "Identify and fix the issue in this code..."
-- Bad examples: "What is polymorphism?", "Explain REST", "What are the advantages of microservices?"
-- Even for Fresher/Junior levels, Core Technology questions must test hands-on thinking, not textbook recall
+- All "Core Technology" questions MUST test conceptual and theoretical understanding — whether the candidate truly grasps WHY something works the way it does, not HOW to write code with it
+- Do NOT ask implementation questions: "How do you implement X?", "Write a function that…", "What is the syntax for…"
+- Do NOT ask shallow definitions: "What is X?", "List the features of Y", "What are the advantages of Z?"
+- Ask about underlying mechanisms, design decisions, trade-offs, and failure modes — things that only make sense once you've used the technology in a real project and encountered its rough edges
+- Good examples: "Why does the JavaScript event loop process microtasks before the next macrotask — and what bug does misunderstanding this cause?", "Why can adding an index slow down writes more than it helps reads, and when does that trade-off tip the other way?", "What does the database engine actually do when two concurrent transactions both try to UPDATE the same row?"
+- Bad examples: "How do you implement a singleton in Java?", "What is the difference between SQL and NoSQL?", "Explain how you would use React hooks"
+
+SENIORITY CALIBRATION FOR CORE TECHNOLOGY — apply based on the SENIORITY LEVEL field:
+- Fresher / Junior (0–3 yrs): Ask foundational concepts a developer first encounters when building their first real feature — things you discover after something breaks in a dev environment. The candidate must explain the mechanism, not just name the API. Example topics: why mutation causes bugs in immutable-style code, what actually happens during an HTTP request-response cycle beyond "the browser sends a request", why an ORM query is slow without knowing SQL.
+- Mid-Level (3–5 yrs): Ask about internals, trade-offs, and production reasoning that only surface after shipping real systems. Questions should require knowing what failure looks like. Example topics: why connection pool exhaustion kills a service, how a garbage collector decides what to collect and why that creates latency spikes, when optimistic locking beats pessimistic locking and the exact scenario where it backfires.
+- Senior and above (5+ yrs): Ask architectural thinking, failure cascade scenarios, and system-level cause-and-effect. The candidate should reason about ripple effects across components. Example topics: how TCP slow-start interacts with short-lived HTTP connections under load, why eventual consistency forces idempotency on application code and where that constraint originates, how the JVM JIT warm-up curve affects latency SLAs for freshly deployed services.
+
+THE LITMUS TEST (apply to every Core Technology question before finalising it): A candidate who has read the documentation but never shipped with this technology in production should NOT be able to give a confident, complete answer. If the answer appears in the "Getting Started" guide or the first paragraph of a Wikipedia article, the question is too shallow — generate a harder one.
 
 PROBLEM SOLVING SECTION RULES (CRITICAL):
 - At least 40% of "Problem Solving" questions MUST be "fix_the_code" type
