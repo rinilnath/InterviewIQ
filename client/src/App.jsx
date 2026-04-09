@@ -17,6 +17,7 @@ import SharedKits from '@/pages/SharedKits';
 import Account from '@/pages/Account';
 import AdminUsers from '@/pages/AdminUsers';
 import AdminDocuments from '@/pages/AdminDocuments';
+import InterviewResults from '@/pages/InterviewResults';
 import NotFound from '@/pages/NotFound';
 
 // Polls every 4 s for kits the user started but may have navigated away from.
@@ -123,6 +124,7 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/generate" element={<GenerateKit />} />
             <Route path="/history" element={<History />} />
+            <Route path="/results" element={<InterviewResults />} />
             <Route path="/trash" element={<Trash />} />
             <Route path="/shared" element={<SharedKits />} />
             <Route path="/account" element={<Account />} />

@@ -316,7 +316,7 @@ export default function KitView() {
         `Q${q.id}`,
         q.question_type === 'fix_the_code' ? `[FIX] ${q.question}\n${q.code_snippet || ''}` : q.question,
         q.source === 'KB' ? `[KB] ${q.kb_label || ''}` : 'AI',
-        q.strong_answer,
+        q.best_answer ?? q.strong_answer ?? '',
         q.score != null ? `${q.score}/5` : 'N/A',
         q.notes || '',
       ]);
@@ -360,7 +360,7 @@ export default function KitView() {
           'Q#': q.id, 'Type': q.question_type || 'standard',
           'Question': q.question, 'Code Snippet': q.code_snippet || '',
           'Source': q.source, 'KB Label': q.kb_label || '',
-          'Expert Answer': q.strong_answer,
+          'Expert Answer': q.best_answer ?? q.strong_answer ?? '',
           'Score': q.score != null ? q.score : '', 'Notes': q.notes || '',
         });
       });
@@ -732,13 +732,54 @@ export default function KitView() {
               </div>
             )}
           </div>
-          <div className="px-6 py-5 flex-1">
-            <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-4">
-              Expert answer &amp; concept breakdown
-            </p>
-            {answerPanel.question && (
-              <AnswerRenderer text={answerPanel.question.strong_answer} />
-            )}
+          <div className="px-6 py-5 flex-1 space-y-5">
+            {answerPanel.question && (answerPanel.question.weak_answer ? (
+              <>
+                {/* Weak */}
+                <div className="rounded-xl border border-rose-200 overflow-hidden">
+                  <div className="bg-rose-50 border-b border-rose-100 px-4 py-2 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" />
+                    <span className="text-xs font-semibold text-rose-700 uppercase tracking-wider">Weak answer</span>
+                    <span className="ml-auto text-[10px] text-rose-400 font-medium">Score ≈ 2</span>
+                  </div>
+                  <div className="px-4 py-3">
+                    <AnswerRenderer text={answerPanel.question.weak_answer} />
+                  </div>
+                </div>
+
+                {/* Good */}
+                <div className="rounded-xl border border-amber-200 overflow-hidden">
+                  <div className="bg-amber-50 border-b border-amber-100 px-4 py-2 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                    <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Good answer</span>
+                    <span className="ml-auto text-[10px] text-amber-400 font-medium">Score ≈ 4</span>
+                  </div>
+                  <div className="px-4 py-3">
+                    <AnswerRenderer text={answerPanel.question.good_answer} />
+                  </div>
+                </div>
+
+                {/* Best */}
+                <div className="rounded-xl border border-emerald-200 overflow-hidden">
+                  <div className="bg-emerald-50 border-b border-emerald-100 px-4 py-2 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Best answer</span>
+                    <span className="ml-auto text-[10px] text-emerald-500 font-medium">Score ≈ 5</span>
+                  </div>
+                  <div className="px-4 py-3">
+                    <AnswerRenderer text={answerPanel.question.best_answer} />
+                  </div>
+                </div>
+              </>
+            ) : (
+              /* Legacy kit — single strong_answer */
+              <>
+                <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                  Expert answer &amp; concept breakdown
+                </p>
+                <AnswerRenderer text={answerPanel.question.strong_answer} />
+              </>
+            ))}
           </div>
         </SheetContent>
       </Sheet>
@@ -786,26 +827,39 @@ function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNote
               )}
 
               {/* Score buttons */}
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-zinc-500">Score:</span>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map((score) => (
-                    <motion.button
-                      key={score}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => onScoreChange(sectionIdx, questionIdx, question.score === score ? null : score)}
-                      className={cn(
-                        'w-8 h-8 rounded-md text-sm font-medium transition-all border',
-                        question.score === score
-                          ? score <= 2 ? 'bg-rose-500 text-white border-rose-500'
-                          : score === 3 ? 'bg-amber-500 text-white border-amber-500'
-                          : 'bg-emerald-500 text-white border-emerald-500'
-                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-indigo-300 hover:bg-indigo-50'
-                      )}
-                    >
-                      {score}
-                    </motion.button>
-                  ))}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-zinc-500 shrink-0">Score:</span>
+                {[
+                  { label: 'Weak', value: 2, active: 'bg-rose-500 text-white border-rose-500', hover: 'hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700' },
+                  { label: 'Good', value: 4, active: 'bg-amber-500 text-white border-amber-500', hover: 'hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700' },
+                  { label: 'Best', value: 5, active: 'bg-emerald-500 text-white border-emerald-500', hover: 'hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700' },
+                ].map(({ label, value, active, hover }) => (
+                  <motion.button
+                    key={label}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => onScoreChange(sectionIdx, questionIdx, question.score === value ? null : value)}
+                    className={cn(
+                      'px-2.5 py-1 rounded-md text-xs font-semibold transition-all border',
+                      question.score === value ? active : `bg-white text-zinc-500 border-zinc-200 ${hover}`
+                    )}
+                  >
+                    {label}
+                  </motion.button>
+                ))}
+                <div className="flex items-center gap-1 ml-1">
+                  <input
+                    type="number"
+                    min="1"
+                    max="5"
+                    value={question.score ?? ''}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      onScoreChange(sectionIdx, questionIdx, v >= 1 && v <= 5 ? v : null);
+                    }}
+                    placeholder="—"
+                    className="w-9 h-7 text-center text-xs border border-zinc-200 rounded-md bg-white text-zinc-700 focus:outline-none focus:border-indigo-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-xs text-zinc-400">/5</span>
                 </div>
               </div>
 
