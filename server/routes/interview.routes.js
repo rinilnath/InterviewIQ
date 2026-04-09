@@ -86,21 +86,27 @@ async function runGenerationJob(kitId, params) {
   } catch (err) {
     clearTimeout(timeoutId);
     // Don't overwrite a user-initiated cancellation with a failure status
-    const { data: current } = await supabase
-      .from('interview_kits')
-      .select('status')
-      .eq('id', kitId)
-      .single()
-      .catch(() => ({ data: null }));
-    if (current?.status === 'cancelled') return;
+    let currentStatus = null;
+    try {
+      const { data } = await supabase
+        .from('interview_kits')
+        .select('status')
+        .eq('id', kitId)
+        .single();
+      currentStatus = data?.status;
+    } catch (_) {}
+    if (currentStatus === 'cancelled') return;
 
     const userMessage = categorizeError(err);
     console.error(`[job] Kit ${kitId} failed:`, err.message);
-    await supabase
-      .from('interview_kits')
-      .update({ status: 'failed', error_message: userMessage, updated_at: new Date().toISOString() })
-      .eq('id', kitId)
-      .catch((e) => console.error('[job] Could not write failure status:', e.message));
+    try {
+      await supabase
+        .from('interview_kits')
+        .update({ status: 'failed', error_message: userMessage, updated_at: new Date().toISOString() })
+        .eq('id', kitId);
+    } catch (e) {
+      console.error('[job] Could not write failure status:', e.message);
+    }
   }
 }
 
