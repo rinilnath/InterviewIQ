@@ -25,9 +25,6 @@ import { toast } from '@/hooks/useToast';
 import { useGeneratingKitsStore } from '@/store/generatingKitsStore';
 
 const schema = z.object({
-  candidateName: z.string().min(1, 'Candidate name is required'),
-  candidateExperienceYears: z.coerce.number({ invalid_type_error: 'Enter a number' }).int().min(0, 'Cannot be negative').max(50, 'Must be 50 or less'),
-  candidateRole: z.string().min(1, 'Role applied for is required'),
   jdText: z.string().min(50, 'Job description must be at least 50 characters'),
   seniorityLevel: z.string().min(1, 'Please select a seniority level'),
   customExpectations: z.string().optional(),
@@ -180,12 +177,10 @@ export default function GenerateKit() {
   const quotaExhausted = quota && !quota.isUnlimited && quota.remaining === 0;
   const quotaWarning  = quota && !quota.isUnlimited && quota.remaining > 0 && quota.percentUsed >= 80;
 
-  const { register, handleSubmit, control, reset, watch, setValue, formState: { errors } } = useForm({
+  const { register, handleSubmit, control, reset, setValue, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: { useKnowledgeBase: false },
   });
-
-  const candidateRole = watch('candidateRole') || '';
 
   const addTech = (tech) => {
     const trimmed = tech.trim();
@@ -206,8 +201,7 @@ export default function GenerateKit() {
     }
     setIsSubmitting(true);
     try {
-      const res = await api.post('/interview/generate', { ...data, techStack, kbPercentage,
-        candidateName: data.candidateName, candidateExperienceYears: data.candidateExperienceYears, candidateRole: data.candidateRole });
+      const res = await api.post('/interview/generate', { ...data, techStack, kbPercentage });
       const kit = res.data.kit;
 
       addGeneratingKit(kit.id, kit.kit_title);
@@ -256,47 +250,6 @@ export default function GenerateKit() {
       )}
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* Candidate Details */}
-        <Card className="border-zinc-200">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Candidate Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Candidate Name <span className="text-rose-500">*</span></Label>
-                <Input
-                  placeholder="e.g. Jane Smith"
-                  className={errors.candidateName ? 'border-rose-400' : ''}
-                  {...register('candidateName')}
-                />
-                {errors.candidateName && <p className="text-xs text-rose-600">{errors.candidateName.message}</p>}
-              </div>
-              <div className="space-y-1.5">
-                <Label>Years of Experience <span className="text-rose-500">*</span></Label>
-                <Input
-                  type="number"
-                  min="0"
-                  max="50"
-                  placeholder="e.g. 4"
-                  className={errors.candidateExperienceYears ? 'border-rose-400' : ''}
-                  {...register('candidateExperienceYears')}
-                />
-                {errors.candidateExperienceYears && <p className="text-xs text-rose-600">{errors.candidateExperienceYears.message}</p>}
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Role Applied For <span className="text-rose-500">*</span></Label>
-              <Input
-                placeholder="e.g. Senior Backend Engineer"
-                className={errors.candidateRole ? 'border-rose-400' : ''}
-                {...register('candidateRole')}
-              />
-              {errors.candidateRole && <p className="text-xs text-rose-600">{errors.candidateRole.message}</p>}
-            </div>
-          </CardContent>
-        </Card>
-
         {/* JD */}
         <Card className="border-zinc-200">
           <CardHeader className="pb-3">
@@ -309,7 +262,7 @@ export default function GenerateKit() {
                 Pick from JD Library <span className="text-zinc-400 text-xs">(optional)</span>
               </Label>
               <JDLibraryPicker
-                roleHint={candidateRole}
+                roleHint=""
                 techHints={techStack}
                 onSelect={(jd) => {
                   setValue('jdText', jd.content, { shouldValidate: true });

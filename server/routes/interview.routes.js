@@ -227,14 +227,10 @@ router.get('/quota', async (req, res) => {
 // POST /api/interview/generate
 router.post('/generate', generateLimiter, async (req, res) => {
   try {
-    const { jdText, seniorityLevel, techStack, customExpectations, useKnowledgeBase, kbPercentage = 25, previousKitId,
-            candidateName, candidateExperienceYears, candidateRole } = req.body;
+    const { jdText, seniorityLevel, techStack, customExpectations, useKnowledgeBase, kbPercentage = 25, previousKitId } = req.body;
 
     if (!jdText || !seniorityLevel || !techStack) {
       return res.status(400).json({ error: 'JD text, seniority level, and tech stack are required' });
-    }
-    if (!candidateName?.trim() || candidateExperienceYears == null || !candidateRole?.trim()) {
-      return res.status(400).json({ error: 'Candidate name, years of experience, and role are required' });
     }
     if (!Array.isArray(techStack) || techStack.length === 0) {
       return res.status(400).json({ error: 'Tech stack must be a non-empty array' });
@@ -299,10 +295,6 @@ router.post('/generate', generateLimiter, async (req, res) => {
         output_json: null,
         status: 'generating',
         is_completed: false,
-        candidate_name: candidateName.trim(),
-        candidate_experience_years: parseInt(candidateExperienceYears, 10),
-        candidate_role: candidateRole.trim(),
-        candidate_status: 'in_progress',
       })
       .select()
       .single();
@@ -606,51 +598,50 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// GET /api/interview/results — all kits with candidate info, visible to all authenticated users
+// GET /api/interview/results — all candidate evaluations with kit info
 router.get('/results', async (req, res) => {
   try {
-    const { data: kits, error } = await supabase
-      .from('interview_kits')
-      .select('id, kit_title, seniority_level, candidate_name, candidate_experience_years, candidate_role, candidate_status, output_json, generated_by, created_at, is_completed, status')
-      .not('candidate_name', 'is', null)
-      .in('status', ['completed', 'generating'])   // exclude failed/cancelled
+    const { data: evals, error } = await supabase
+      .from('candidate_evaluations')
+      .select('id, kit_id, candidate_name, candidate_role, candidate_experience_years, overall_score, result_status, interviewed_by, created_at')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    // Enrich with interviewer names (separate query avoids FK join issues)
-    const userIds = [...new Set((kits || []).map((k) => k.generated_by).filter(Boolean))];
-    let usersMap = {};
-    if (userIds.length > 0) {
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, name')
-        .in('id', userIds);
-      if (users) users.forEach((u) => { usersMap[u.id] = u.name; });
+    // Enrich with kit info
+    const kitIds = [...new Set((evals || []).map((e) => e.kit_id).filter(Boolean))];
+    let kitsMap = {};
+    if (kitIds.length > 0) {
+      const { data: kits } = await supabase
+        .from('interview_kits')
+        .select('id, kit_title, seniority_level, is_completed')
+        .in('id', kitIds);
+      (kits || []).forEach((k) => { kitsMap[k.id] = k; });
     }
 
-    // Compute overall score from output_json sections
-    const results = (kits || []).map((k) => {
-      let overallScore = null;
-      if (k.output_json?.sections) {
-        const all = k.output_json.sections.flatMap((s) => s.questions || []);
-        const scored = all.filter((q) => q.score != null);
-        if (scored.length > 0) {
-          overallScore = (scored.reduce((sum, q) => sum + Number(q.score), 0) / scored.length).toFixed(1);
-        }
-      }
+    // Enrich with interviewer names
+    const userIds = [...new Set((evals || []).map((e) => e.interviewed_by).filter(Boolean))];
+    let usersMap = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase.from('users').select('id, name').in('id', userIds);
+      (users || []).forEach((u) => { usersMap[u.id] = u.name; });
+    }
+
+    const results = (evals || []).map((e) => {
+      const kit = kitsMap[e.kit_id] || {};
       return {
-        id: k.id,
-        kit_title: k.kit_title,
-        seniority_level: k.seniority_level,
-        candidate_name: k.candidate_name,
-        candidate_experience_years: k.candidate_experience_years,
-        candidate_role: k.candidate_role,
-        candidate_status: k.candidate_status,
-        overall_score: overallScore,
-        interviewed_by: usersMap[k.generated_by] || '—',
-        interview_date: k.created_at,
-        is_completed: k.is_completed,
+        id: e.id,
+        kit_id: e.kit_id,
+        kit_title: kit.kit_title || '—',
+        seniority_level: kit.seniority_level || '—',
+        candidate_name: e.candidate_name,
+        candidate_role: e.candidate_role,
+        candidate_experience_years: e.candidate_experience_years,
+        overall_score: e.overall_score,
+        result_status: e.result_status,
+        interviewed_by: usersMap[e.interviewed_by] || '—',
+        interview_date: e.created_at,
+        is_completed: kit.is_completed || false,
       };
     });
 
@@ -661,24 +652,143 @@ router.get('/results', async (req, res) => {
   }
 });
 
-// PATCH /api/interview/:id/candidate-status — any authenticated user can update pipeline status
-router.patch('/:id/candidate-status', async (req, res) => {
+// ─── Candidate Evaluations ────────────────────────────────────────────────────
+
+// GET /api/interview/:id/evaluations — list all evaluations for a kit
+router.get('/:id/evaluations', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { candidateStatus } = req.body;
+    const { id: kitId } = req.params;
+
+    const { data: kit, error: kitErr } = await supabase
+      .from('interview_kits')
+      .select('id, generated_by, is_shared')
+      .eq('id', kitId)
+      .single();
+
+    if (kitErr || !kit) return res.status(404).json({ error: 'Kit not found' });
+    if (req.user.role !== 'admin' && kit.generated_by !== req.user.id && !kit.is_shared) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { data, error } = await supabase
+      .from('candidate_evaluations')
+      .select('id, kit_id, candidate_name, candidate_role, candidate_experience_years, scores_json, overall_score, result_status, interviewed_by, created_at')
+      .eq('kit_id', kitId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    res.json({ evaluations: data });
+  } catch (err) {
+    console.error('List evaluations error:', err);
+    res.status(500).json({ error: 'Failed to fetch evaluations' });
+  }
+});
+
+// POST /api/interview/:id/evaluations — create a new candidate evaluation
+router.post('/:id/evaluations', async (req, res) => {
+  try {
+    const { id: kitId } = req.params;
+    const { candidateName, candidateRole, candidateExperienceYears } = req.body;
+
+    if (!candidateName?.trim()) return res.status(400).json({ error: 'Candidate name is required' });
+
+    const { data: kit, error: kitErr } = await supabase
+      .from('interview_kits')
+      .select('id, generated_by, status, is_shared')
+      .eq('id', kitId)
+      .single();
+
+    if (kitErr || !kit) return res.status(404).json({ error: 'Kit not found' });
+    if (kit.status !== 'completed') return res.status(400).json({ error: 'Kit must be completed before adding candidates' });
+    if (req.user.role !== 'admin' && kit.generated_by !== req.user.id && !kit.is_shared) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { data, error } = await supabase
+      .from('candidate_evaluations')
+      .insert({
+        kit_id: kitId,
+        candidate_name: candidateName.trim(),
+        candidate_role: candidateRole?.trim() || null,
+        candidate_experience_years: candidateExperienceYears != null ? parseInt(candidateExperienceYears, 10) : null,
+        scores_json: {},
+        result_status: 'in_progress',
+        interviewed_by: req.user.id,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ evaluation: data });
+  } catch (err) {
+    console.error('Create evaluation error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create evaluation' });
+  }
+});
+
+// PATCH /api/interview/:id/evaluations/:evalId/scores — save scores for a candidate
+router.patch('/:id/evaluations/:evalId/scores', async (req, res) => {
+  try {
+    const { id: kitId, evalId } = req.params;
+    const { scores_json } = req.body;
+
+    if (typeof scores_json !== 'object' || scores_json === null) {
+      return res.status(400).json({ error: 'scores_json must be an object' });
+    }
+
+    const { data: ev, error: evErr } = await supabase
+      .from('candidate_evaluations')
+      .select('id, kit_id, interviewed_by')
+      .eq('id', evalId)
+      .eq('kit_id', kitId)
+      .single();
+
+    if (evErr || !ev) return res.status(404).json({ error: 'Evaluation not found' });
+    if (req.user.role !== 'admin' && ev.interviewed_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Compute overall score from scores_json
+    const scored = Object.values(scores_json).filter((v) => v?.score != null);
+    const overallScore = scored.length > 0
+      ? parseFloat((scored.reduce((sum, v) => sum + Number(v.score), 0) / scored.length).toFixed(1))
+      : null;
+
+    const { data, error } = await supabase
+      .from('candidate_evaluations')
+      .update({ scores_json, overall_score: overallScore, updated_at: new Date().toISOString() })
+      .eq('id', evalId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ evaluation: data });
+  } catch (err) {
+    console.error('Save evaluation scores error:', err);
+    res.status(500).json({ error: 'Failed to save scores' });
+  }
+});
+
+// PATCH /api/interview/:id/evaluations/:evalId/status — update pipeline status
+router.patch('/:id/evaluations/:evalId/status', async (req, res) => {
+  try {
+    const { evalId } = req.params;
+    const { resultStatus } = req.body;
     const valid = ['in_progress', 'selected', 'rejected', 'on_hold'];
-    if (!valid.includes(candidateStatus)) {
+    if (!valid.includes(resultStatus)) {
       return res.status(400).json({ error: `Status must be one of: ${valid.join(', ')}` });
     }
-    const { error } = await supabase
-      .from('interview_kits')
-      .update({ candidate_status: candidateStatus })
-      .eq('id', id);
+    const { data, error } = await supabase
+      .from('candidate_evaluations')
+      .update({ result_status: resultStatus, updated_at: new Date().toISOString() })
+      .eq('id', evalId)
+      .select()
+      .single();
     if (error) throw error;
-    res.json({ ok: true });
+    res.json({ evaluation: data });
   } catch (err) {
-    console.error('Candidate status update error:', err);
-    res.status(500).json({ error: 'Failed to update candidate status' });
+    console.error('Evaluation status update error:', err);
+    res.status(500).json({ error: 'Failed to update status' });
   }
 });
 
