@@ -18,6 +18,7 @@ import Account from '@/pages/Account';
 import AdminUsers from '@/pages/AdminUsers';
 import AdminDocuments from '@/pages/AdminDocuments';
 import InterviewResults from '@/pages/InterviewResults';
+import JDLibrary from '@/pages/JDLibrary';
 import NotFound from '@/pages/NotFound';
 
 // Polls every 4 s for kits the user started but may have navigated away from.
@@ -130,6 +131,7 @@ export default function App() {
             <Route path="/account" element={<Account />} />
             <Route path="/kit/:id" element={<KitView />} />
             <Route path="/knowledge-base" element={<AdminDocuments />} />
+            <Route path="/jd-library" element={<JDLibrary />} />
             <Route path="/admin/documents" element={<Navigate to="/knowledge-base" replace />} />
 
             <Route element={<AdminRoute />}>

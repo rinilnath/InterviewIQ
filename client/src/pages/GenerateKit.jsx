@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Sparkles, Plus, X, Loader2, AlertTriangle, Zap } from 'lucide-react';
+import {
+  Sparkles, Plus, X, Loader2, AlertTriangle, Zap,
+  ChevronDown, FileText, Library,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,9 +17,10 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '@/lib/api';
-import { SENIORITY_LEVELS } from '@/lib/utils';
+import { SENIORITY_LEVELS, cn } from '@/lib/utils';
 import { toast } from '@/hooks/useToast';
 import { useGeneratingKitsStore } from '@/store/generatingKitsStore';
 
@@ -36,6 +40,128 @@ const COMMON_TECH = [
   'Microservices', 'REST API', 'GraphQL', 'Redis', 'CI/CD', 'Terraform', 'Azure', 'GCP',
 ];
 
+// ─── JD Library Picker ────────────────────────────────────────────────────────
+// Searchable dropdown that lets the user pick a saved JD and auto-fill the
+// JD textarea. Role and tech hints pre-filter the list; search narrows further.
+function JDLibraryPicker({ onSelect, roleHint, techHints }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const wrapperRef = useRef(null);
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const { data: jds = [] } = useQuery({
+    queryKey: ['jd-library'],
+    queryFn: async () => (await api.get('/jd')).data.jds,
+    staleTime: 60_000,
+  });
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (q) {
+      // Manual search overrides the auto-filter
+      return jds.filter((jd) =>
+        jd.title.toLowerCase().includes(q) ||
+        jd.role.toLowerCase().includes(q) ||
+        (jd.technologies || []).some((t) => t.toLowerCase().includes(q))
+      );
+    }
+    // Auto-filter by role and tech from the form — show all if nothing entered yet
+    const hasHints = roleHint.trim() || techHints.length > 0;
+    if (!hasHints) return jds;
+    return jds.filter((jd) => {
+      const roleMatch = roleHint.trim() &&
+        jd.role.toLowerCase().includes(roleHint.trim().toLowerCase());
+      const techMatch = techHints.some((h) =>
+        (jd.technologies || []).some((t) => t.toLowerCase().includes(h.toLowerCase()))
+      );
+      return roleMatch || techMatch;
+    });
+  }, [jds, search, roleHint, techHints]);
+
+  if (jds.length === 0) return null;
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen((o) => !o); setSearch(''); }}
+        className={cn(
+          'flex items-center gap-2 w-full px-3 py-2 text-sm rounded-lg border transition-colors text-left',
+          open
+            ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+            : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50',
+        )}
+      >
+        <Library className="w-4 h-4 shrink-0 text-zinc-400" />
+        <span className="flex-1">Pick from JD Library</span>
+        <ChevronDown className={cn('w-3.5 h-3.5 text-zinc-400 transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-lg shadow-lg overflow-hidden">
+          {/* Search input */}
+          <div className="p-2 border-b border-zinc-100">
+            <Input
+              autoFocus
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by title, role or technology..."
+              className="h-8 text-sm"
+            />
+          </div>
+
+          {/* JD list */}
+          <div className="max-h-60 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="text-xs text-zinc-400 text-center py-4">
+                {search ? 'No JDs match your search.' : 'No matching JDs found for this role/tech.'}
+              </p>
+            ) : (
+              filtered.map((jd) => (
+                <button
+                  key={jd.id}
+                  type="button"
+                  onClick={() => { onSelect(jd); setOpen(false); setSearch(''); }}
+                  className="w-full text-left px-3 py-2.5 hover:bg-indigo-50 transition-colors border-b border-zinc-50 last:border-0"
+                >
+                  <div className="flex items-start gap-2">
+                    <FileText className="w-3.5 h-3.5 text-zinc-300 mt-0.5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-zinc-900 truncate">{jd.title}</p>
+                      <p className="text-xs text-zinc-500 truncate">{jd.role}</p>
+                      {(jd.technologies || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {jd.technologies.slice(0, 5).map((t) => (
+                            <Badge key={t} variant="secondary" className="text-xs px-1 py-0 h-4">
+                              {t}
+                            </Badge>
+                          ))}
+                          {jd.technologies.length > 5 && (
+                            <span className="text-xs text-zinc-400">+{jd.technologies.length - 5}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function GenerateKit() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -54,10 +180,12 @@ export default function GenerateKit() {
   const quotaExhausted = quota && !quota.isUnlimited && quota.remaining === 0;
   const quotaWarning  = quota && !quota.isUnlimited && quota.remaining > 0 && quota.percentUsed >= 80;
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm({
+  const { register, handleSubmit, control, reset, watch, setValue, formState: { errors } } = useForm({
     resolver: zodResolver(schema),
     defaultValues: { useKnowledgeBase: false },
   });
+
+  const candidateRole = watch('candidateRole') || '';
 
   const addTech = (tech) => {
     const trimmed = tech.trim();
@@ -174,13 +302,30 @@ export default function GenerateKit() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Job Description</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Textarea
-              placeholder="Paste the full job description here..."
-              className={`min-h-[180px] text-sm ${errors.jdText ? 'border-rose-400' : ''}`}
-              {...register('jdText')}
-            />
-            {errors.jdText && <p className="text-xs text-rose-600 mt-1">{errors.jdText.message}</p>}
+          <CardContent className="space-y-3">
+            {/* JD Library picker — optional, auto-hides when library is empty */}
+            <div className="space-y-1.5">
+              <Label className="text-zinc-500 font-normal">
+                Pick from JD Library <span className="text-zinc-400 text-xs">(optional)</span>
+              </Label>
+              <JDLibraryPicker
+                roleHint={candidateRole}
+                techHints={techStack}
+                onSelect={(jd) => {
+                  setValue('jdText', jd.content, { shouldValidate: true });
+                  toast.success('JD loaded', `"${jd.title}" filled in — edit freely below.`);
+                }}
+              />
+            </div>
+
+            <div>
+              <Textarea
+                placeholder="Paste the full job description here..."
+                className={`min-h-[180px] text-sm ${errors.jdText ? 'border-rose-400' : ''}`}
+                {...register('jdText')}
+              />
+              {errors.jdText && <p className="text-xs text-rose-600 mt-1">{errors.jdText.message}</p>}
+            </div>
           </CardContent>
         </Card>
 

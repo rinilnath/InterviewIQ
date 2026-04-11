@@ -12,6 +12,7 @@ import {
   Globe,
   UserCircle,
   BarChart2,
+  FileStack,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/authStore';
@@ -27,6 +28,7 @@ const navItems = [
   { to: '/results', label: 'Interview Results', icon: BarChart2 },
   { to: '/shared', label: 'Shared Kits', icon: Globe },
   { to: '/trash', label: 'Trash', icon: Trash2 },
+  { to: '/jd-library', label: 'JD Library', icon: FileStack },
   { to: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
   { to: '/account', label: 'Account', icon: UserCircle },
 ];
