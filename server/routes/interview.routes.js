@@ -110,13 +110,17 @@ async function runGenerationJob(kitId, params) {
   }
 }
 
+const STUCK_KIT_MESSAGE = 'Generation interrupted — server was restarted. Please retry.';
+const STUCK_WATCHDOG_MINUTES = 10; // kits still 'generating' after this long are considered stuck
+
 // ─── Startup recovery: mark any stuck 'generating' kits as failed ──────────
+// On startup there are no active generation jobs, so every 'generating' kit is stuck.
 async function recoverStuckGenerations() {
   const { data, error } = await supabase
     .from('interview_kits')
     .update({
       status: 'failed',
-      error_message: 'The server was restarted while this kit was generating. Please use Retry to regenerate.',
+      error_message: STUCK_KIT_MESSAGE,
       updated_at: new Date().toISOString(),
     })
     .eq('status', 'generating')
@@ -126,6 +130,29 @@ async function recoverStuckGenerations() {
     console.error('[startup] Could not recover stuck generations:', error.message);
   } else if (data?.length > 0) {
     console.log(`[startup] Marked ${data.length} stuck kit(s) as failed.`);
+  }
+}
+
+// ─── Watchdog: catch kits that get stuck while server is running ──────────
+// Runs every 5 minutes. Only touches kits older than STUCK_WATCHDOG_MINUTES to
+// avoid interfering with kits that are actively generating (max runtime = 5 min).
+async function watchdogStuckGenerations() {
+  const cutoff = new Date(Date.now() - STUCK_WATCHDOG_MINUTES * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('interview_kits')
+    .update({
+      status: 'failed',
+      error_message: STUCK_KIT_MESSAGE,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('status', 'generating')
+    .lt('created_at', cutoff)
+    .is('deleted_at', null)
+    .select('id');
+  if (error) {
+    console.error('[watchdog] Could not recover stuck generations:', error.message);
+  } else if (data?.length > 0) {
+    console.log(`[watchdog] Marked ${data.length} stuck kit(s) as failed.`);
   }
 }
 
@@ -145,8 +172,10 @@ async function cleanupExpiredTrash() {
 cleanupExpiredTrash();
 setInterval(cleanupExpiredTrash, 24 * 60 * 60 * 1000);
 
-// Recover any kits stuck in 'generating' from before the last server start
+// Recover stuck kits on startup (no active jobs exist yet)
 recoverStuckGenerations();
+// Then keep catching any kits that get stuck while the server is running
+setInterval(watchdogStuckGenerations, 5 * 60 * 1000);
 
 // ─────────────────────────────────────────────────────────────────────────
 // ROUTES — ordered so named paths (/history, /trash/*) come before /:id
