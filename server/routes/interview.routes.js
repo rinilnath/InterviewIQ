@@ -601,10 +601,13 @@ router.get('/stats', async (req, res) => {
 // GET /api/interview/results — all candidate evaluations with kit info
 router.get('/results', async (req, res) => {
   try {
-    const { data: evals, error } = await supabase
+    const includeRemoved = req.query.include_removed === 'true';
+    let evalsQuery = supabase
       .from('candidate_evaluations')
-      .select('id, kit_id, candidate_name, candidate_role, candidate_experience_years, overall_score, result_status, interviewed_by, created_at')
+      .select('id, kit_id, candidate_name, candidate_role, candidate_experience_years, overall_score, result_status, interview_stage, removed_at, interviewed_by, created_at')
       .order('created_at', { ascending: false });
+    if (!includeRemoved) evalsQuery = evalsQuery.is('removed_at', null);
+    const { data: evals, error } = await evalsQuery;
 
     if (error) throw error;
 
@@ -641,6 +644,7 @@ router.get('/results', async (req, res) => {
         result_status: e.result_status,
         interviewed_by: usersMap[e.interviewed_by] || '—',
         interview_date: e.created_at,
+        removed_at: e.removed_at || null,
         is_completed: kit.is_completed || false,
       };
     });
@@ -658,6 +662,7 @@ router.get('/results', async (req, res) => {
 router.get('/:id/evaluations', async (req, res) => {
   try {
     const { id: kitId } = req.params;
+    const includeRemoved = req.query.include_removed === 'true';
 
     const { data: kit, error: kitErr } = await supabase
       .from('interview_kits')
@@ -670,12 +675,15 @@ router.get('/:id/evaluations', async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('candidate_evaluations')
-      .select('id, kit_id, candidate_name, candidate_role, candidate_experience_years, scores_json, overall_score, result_status, interviewed_by, created_at')
+      .select('id, kit_id, candidate_name, candidate_role, candidate_experience_years, scores_json, overall_score, result_status, interview_stage, removed_at, interviewed_by, created_at')
       .eq('kit_id', kitId)
       .order('created_at', { ascending: true });
 
+    if (!includeRemoved) query = query.is('removed_at', null);
+
+    const { data, error } = await query;
     if (error) throw error;
     res.json({ evaluations: data });
   } catch (err) {
@@ -713,6 +721,7 @@ router.post('/:id/evaluations', async (req, res) => {
         candidate_experience_years: candidateExperienceYears != null ? parseInt(candidateExperienceYears, 10) : null,
         scores_json: {},
         result_status: 'in_progress',
+        interview_stage: 'scheduled',
         interviewed_by: req.user.id,
       })
       .select()
@@ -789,6 +798,190 @@ router.patch('/:id/evaluations/:evalId/status', async (req, res) => {
   } catch (err) {
     console.error('Evaluation status update error:', err);
     res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// POST /api/interview/:id/evaluations/bulk-remove — soft-delete multiple evaluations
+router.post('/:id/evaluations/bulk-remove', async (req, res) => {
+  try {
+    const { id: kitId } = req.params;
+    const { evalIds } = req.body;
+
+    if (!Array.isArray(evalIds) || evalIds.length === 0) {
+      return res.status(400).json({ error: 'evalIds must be a non-empty array' });
+    }
+
+    const { data: kit, error: kitErr } = await supabase
+      .from('interview_kits')
+      .select('id, generated_by, is_shared')
+      .eq('id', kitId)
+      .single();
+
+    if (kitErr || !kit) return res.status(404).json({ error: 'Kit not found' });
+    if (req.user.role !== 'admin' && kit.generated_by !== req.user.id && !kit.is_shared) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { error } = await supabase
+      .from('candidate_evaluations')
+      .update({ removed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('kit_id', kitId)
+      .in('id', evalIds)
+      .is('removed_at', null);
+
+    if (error) throw error;
+    res.json({ message: `${evalIds.length} candidate(s) removed` });
+  } catch (err) {
+    console.error('Bulk remove evaluations error:', err);
+    res.status(500).json({ error: 'Failed to remove candidates' });
+  }
+});
+
+// PATCH /api/interview/:id/evaluations/:evalId/stage — update interview stage
+router.patch('/:id/evaluations/:evalId/stage', async (req, res) => {
+  try {
+    const { id: kitId, evalId } = req.params;
+    const { interviewStage } = req.body;
+    const valid = ['scheduled', 'in_progress', 'completed'];
+    if (!valid.includes(interviewStage)) {
+      return res.status(400).json({ error: `Stage must be one of: ${valid.join(', ')}` });
+    }
+
+    const { data: ev, error: evErr } = await supabase
+      .from('candidate_evaluations')
+      .select('id, kit_id, interviewed_by')
+      .eq('id', evalId)
+      .eq('kit_id', kitId)
+      .single();
+
+    if (evErr || !ev) return res.status(404).json({ error: 'Evaluation not found' });
+    if (req.user.role !== 'admin' && ev.interviewed_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { data, error } = await supabase
+      .from('candidate_evaluations')
+      .update({ interview_stage: interviewStage, updated_at: new Date().toISOString() })
+      .eq('id', evalId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ evaluation: data });
+  } catch (err) {
+    console.error('Evaluation stage update error:', err);
+    res.status(500).json({ error: 'Failed to update stage' });
+  }
+});
+
+// PATCH /api/interview/:id/evaluations/:evalId/remove — soft-delete a candidate evaluation
+router.patch('/:id/evaluations/:evalId/remove', async (req, res) => {
+  try {
+    const { id: kitId, evalId } = req.params;
+
+    const { data: ev, error: evErr } = await supabase
+      .from('candidate_evaluations')
+      .select('id, kit_id, interviewed_by')
+      .eq('id', evalId)
+      .eq('kit_id', kitId)
+      .single();
+
+    if (evErr || !ev) return res.status(404).json({ error: 'Evaluation not found' });
+    if (req.user.role !== 'admin' && ev.interviewed_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { data, error } = await supabase
+      .from('candidate_evaluations')
+      .update({ removed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', evalId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ evaluation: data });
+  } catch (err) {
+    console.error('Remove evaluation error:', err);
+    res.status(500).json({ error: 'Failed to remove candidate' });
+  }
+});
+
+// PATCH /api/interview/:id/evaluations/:evalId/restore — restore a soft-deleted evaluation
+router.patch('/:id/evaluations/:evalId/restore', async (req, res) => {
+  try {
+    const { id: kitId, evalId } = req.params;
+
+    const { data: ev, error: evErr } = await supabase
+      .from('candidate_evaluations')
+      .select('id, kit_id, interviewed_by')
+      .eq('id', evalId)
+      .eq('kit_id', kitId)
+      .single();
+
+    if (evErr || !ev) return res.status(404).json({ error: 'Evaluation not found' });
+    if (req.user.role !== 'admin' && ev.interviewed_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const { data, error } = await supabase
+      .from('candidate_evaluations')
+      .update({ removed_at: null, updated_at: new Date().toISOString() })
+      .eq('id', evalId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ evaluation: data });
+  } catch (err) {
+    console.error('Restore evaluation error:', err);
+    res.status(500).json({ error: 'Failed to restore candidate' });
+  }
+});
+
+// PATCH /api/interview/:id/evaluations/:evalId — edit candidate metadata
+// Name is locked once any score has been saved; role and experience are always editable.
+router.patch('/:id/evaluations/:evalId', async (req, res) => {
+  try {
+    const { id: kitId, evalId } = req.params;
+    const { candidateName, candidateRole, candidateExperienceYears } = req.body;
+
+    const { data: ev, error: evErr } = await supabase
+      .from('candidate_evaluations')
+      .select('id, kit_id, interviewed_by, scores_json')
+      .eq('id', evalId)
+      .eq('kit_id', kitId)
+      .single();
+
+    if (evErr || !ev) return res.status(404).json({ error: 'Evaluation not found' });
+    if (req.user.role !== 'admin' && ev.interviewed_by !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const hasScores = Object.keys(ev.scores_json || {}).length > 0;
+    const updates = { updated_at: new Date().toISOString() };
+
+    if (candidateName !== undefined) {
+      if (hasScores) return res.status(409).json({ error: 'Cannot change candidate name once scoring has started' });
+      if (!candidateName.trim()) return res.status(400).json({ error: 'Candidate name cannot be empty' });
+      updates.candidate_name = candidateName.trim();
+    }
+    if (candidateRole !== undefined) updates.candidate_role = candidateRole?.trim() || null;
+    if (candidateExperienceYears !== undefined) {
+      updates.candidate_experience_years = candidateExperienceYears != null ? parseInt(candidateExperienceYears, 10) : null;
+    }
+
+    const { data, error } = await supabase
+      .from('candidate_evaluations')
+      .update(updates)
+      .eq('id', evalId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ evaluation: data });
+  } catch (err) {
+    console.error('Update evaluation metadata error:', err);
+    res.status(500).json({ error: 'Failed to update candidate' });
   }
 });
 
