@@ -44,15 +44,15 @@ export default function InterviewResults() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ id, candidateStatus }) =>
-      api.patch(`/interview/${id}/candidate-status`, { candidateStatus }),
+    mutationFn: ({ id, kitId, resultStatus }) =>
+      api.patch(`/interview/${kitId}/evaluations/${id}/status`, { resultStatus }),
     onSuccess: (_, vars) => {
       queryClient.setQueryData(['interview', 'results'], (old) => {
         if (!old) return old;
         return {
           ...old,
           results: old.results.map((r) =>
-            r.id === vars.id ? { ...r, candidate_status: vars.candidateStatus } : r
+            r.id === vars.id ? { ...r, result_status: vars.resultStatus } : r
           ),
         };
       });
@@ -90,7 +90,7 @@ export default function InterviewResults() {
           <BarChart2 className="w-12 h-12 text-zinc-200 mx-auto mb-4" />
           <h3 className="text-base font-medium text-zinc-900">No results yet</h3>
           <p className="text-sm text-zinc-500 mt-1">
-            Generate a kit with candidate details to start tracking interview outcomes.
+            Open a completed kit and add candidates to start tracking interview outcomes.
           </p>
         </div>
       ) : (
@@ -112,7 +112,7 @@ export default function InterviewResults() {
               </thead>
               <tbody>
                 {results.map((r, i) => {
-                  const meta = statusMeta(r.candidate_status);
+                  const meta = statusMeta(r.result_status);
                   return (
                     <motion.tr
                       key={r.id}
@@ -128,26 +128,24 @@ export default function InterviewResults() {
 
                       {/* Role Applied For */}
                       <td className="px-4 py-3 text-zinc-600 max-w-[160px] truncate" title={r.candidate_role}>
-                        {r.candidate_role}
+                        {r.candidate_role || '—'}
                       </td>
 
                       {/* Experience */}
                       <td className="px-4 py-3 text-zinc-500 whitespace-nowrap">
-                        {r.candidate_experience_years} yr{r.candidate_experience_years !== 1 ? 's' : ''}
+                        {r.candidate_experience_years != null
+                          ? `${r.candidate_experience_years} yr${r.candidate_experience_years !== 1 ? 's' : ''}`
+                          : '—'}
                       </td>
 
                       {/* Kit Title */}
                       <td className="px-4 py-3 text-zinc-600 max-w-[180px] truncate" title={r.kit_title}>
-                        {r.is_completed ? (
-                          <a
-                            href={`/kit/${r.id}`}
-                            className="hover:text-indigo-600 hover:underline transition-colors"
-                          >
-                            {r.kit_title}
-                          </a>
-                        ) : (
-                          <span className="text-zinc-400 italic">Generating…</span>
-                        )}
+                        <a
+                          href={`/kit/${r.kit_id}`}
+                          className="hover:text-indigo-600 hover:underline transition-colors"
+                        >
+                          {r.kit_title}
+                        </a>
                       </td>
 
                       {/* Seniority */}
@@ -163,9 +161,9 @@ export default function InterviewResults() {
                       {/* Status dropdown */}
                       <td className="px-4 py-3">
                         <Select
-                          value={r.candidate_status}
+                          value={r.result_status}
                           onValueChange={(val) =>
-                            statusMutation.mutate({ id: r.id, candidateStatus: val })
+                            statusMutation.mutate({ id: r.id, kitId: r.kit_id, resultStatus: val })
                           }
                         >
                           <SelectTrigger className={cn(

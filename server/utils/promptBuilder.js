@@ -202,6 +202,24 @@ function buildDynamicContext({ jdText, seniorityLevel, techStack, customExpectat
     sourcingInstruction = `- Generate ${aiCount} questions (${100 - effectivePct}%) yourself. Tag source: "AI", kb_label: null.\n- Source exactly ${kbCount} questions (${effectivePct}%) from the knowledge base below. Tag source: "KB", kb_label: <document label>.`;
   }
 
+  const expectationsBlock = customExpectations ? `
+CUSTOM EXPECTATIONS — ACTIVE CONSTRAINTS (read before generating any question):
+---
+${customExpectations}
+---
+These are hard constraints, not supplementary context. They must reshape BOTH which topics are covered AND how every question is framed. Apply all four rules below without exception:
+
+1. EXTRACT DOMAINS: Identify every domain, technology, scenario type, and business context implied by the expectations above. Map each to concrete technical topics. Examples: "must have AWS experience" → IAM policies, VPC design, S3 consistency model, Lambda cold-start latency, cost of cross-AZ traffic. "real-time data pipelines" → Kafka offset management, backpressure, exactly-once semantics, watermark handling, consumer group rebalancing.
+
+2. BIAS TOPICS: Weight question selection toward these extracted domains in every section. Do not generate a generic question about a technology when a context-specific question testing the same concept is possible. If a Core Technology question could be about TCP or about Kafka consumer lag under network partition, choose Kafka consumer lag because it matches the context.
+
+3. REFRAME QUESTIONS: Embed the customer's scenario directly into the question stem so the context is unavoidable. Do NOT ask "What is eventual consistency?" — ask "Your real-time pipeline ingests 400k events/sec into an eventually consistent state store. Why does this force your deduplication logic to be idempotent, and what silent data corruption occurs if it isn't?" The framing must make a generic answer feel clearly inadequate.
+
+4. SCOPE ALL SECTIONS: Every section is affected — not just Core Technology. System Design questions should be architected around the customer's domain. Problem Solving code snippets should use the customer's stack and scenario. Situational and Pressure Handling questions should be set in the customer's actual environment. A question about "handling a production incident" should feel like it is happening at a company doing exactly what the expectations describe.
+
+DO NOT create a separate "Custom Expectations" section. Weave all requirements into the existing sections naturally.
+` : '';
+
   let ctx = `Generate a comprehensive interview kit for the following role.
 
 JOB DESCRIPTION:
@@ -210,12 +228,13 @@ ${jdText}
 SENIORITY LEVEL: ${seniorityLevel}
 TECH STACK: ${techStackStr}
 TOTAL QUESTIONS REQUIRED: ${questionCount}
-${customExpectations ? `CUSTOM EXPECTATIONS:\n${customExpectations}\n` : ''}SECTION WEIGHT DISTRIBUTION:
+
+SECTION WEIGHT DISTRIBUTION:
 ${sectionWeightsStr}
 
 COMPLEXITY CALIBRATION:
 ${calibration}
-
+${expectationsBlock}
 QUESTION SOURCING:
 ${sourcingInstruction}`;
 

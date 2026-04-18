@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useGeneratingKitsStore } from '@/store/generatingKitsStore';
@@ -7,12 +7,14 @@ import {
   ChevronDown, ChevronUp, Download, FileSpreadsheet,
   CheckCircle2, Save, ArrowLeft, Calendar, Layers,
   RefreshCw, Eye, Bug, X, AlertTriangle, Square,
-  Globe, Lock, RotateCcw,
+  Globe, Lock, RotateCcw, UserPlus, Users, UserCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
@@ -23,7 +25,7 @@ import {
 } from '@/components/ui/dialog';
 import api from '@/lib/api';
 import { toast } from '@/hooks/useToast';
-import { formatDateShort, calculateOverallScore, cn } from '@/lib/utils';
+import { formatDateShort, cn } from '@/lib/utils';
 import { useRegenerationStore } from '@/store/regenerationStore';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -134,6 +136,14 @@ export default function KitView() {
   const [answerPanel, setAnswerPanel] = useState({ open: false, question: null });
   const stepTimers = useRef([]);
 
+  // ── Candidate evaluation state ───────────────────────────────────────────
+  const [selectedEvalId, setSelectedEvalId] = useState(null);
+  const [candidateScores, setCandidateScores] = useState({}); // { [qId]: { score, notes } }
+  const [showAddCandidate, setShowAddCandidate] = useState(false);
+  const [newCandName, setNewCandName] = useState('');
+  const [newCandRole, setNewCandRole] = useState('');
+  const [newCandExp, setNewCandExp] = useState('');
+
   const { startJob, updateJob, completeJob, failJob, clearJob, getJob } = useRegenerationStore();
   const regenJob = useRegenerationStore((s) => s.jobs[id]);
   const { remove: removeFromGenerating } = useGeneratingKitsStore();
@@ -145,10 +155,33 @@ export default function KitView() {
       const res = await api.get(`/interview/${id}`);
       return res.data.kit;
     },
-    // Poll every 3 s while the kit is being generated; stop once done
     refetchInterval: (query) =>
       query.state.data?.status === 'generating' ? 3000 : false,
   });
+
+  // Fetch candidate evaluations once the kit is completed
+  const { data: evaluations = [], refetch: refetchEvals } = useQuery({
+    queryKey: ['kit', id, 'evaluations'],
+    queryFn: async () => (await api.get(`/interview/${id}/evaluations`)).data.evaluations,
+    enabled: kitData?.status === 'completed',
+    staleTime: 30_000,
+  });
+
+  const selectedEval = useMemo(
+    () => evaluations.find((e) => e.id === selectedEvalId) || null,
+    [evaluations, selectedEvalId],
+  );
+
+  const handleSelectCandidate = useCallback((ev) => {
+    setSelectedEvalId(ev.id);
+    setCandidateScores(ev.scores_json || {});
+  }, []);
+
+  // Merge kit question with the active candidate's score/notes
+  const qWithScores = useCallback((q) => {
+    const s = candidateScores[String(q.id)] || { score: null, notes: '' };
+    return { ...q, score: s.score ?? null, notes: s.notes ?? '' };
+  }, [candidateScores]);
 
   useEffect(() => {
     if (!fetchedKit) return;
@@ -191,19 +224,41 @@ export default function KitView() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async ({ isCompleted }) => {
-      const res = await api.patch(`/interview/${id}/scores`, {
-        output_json: kitData.output_json,
-        is_completed: isCompleted !== undefined ? isCompleted : kitData.is_completed,
-      });
-      return res.data.kit;
+    mutationFn: async ({ isCompleted } = {}) => {
+      if (!selectedEvalId) throw new Error('No candidate selected');
+      const [scoresRes] = await Promise.all([
+        api.patch(`/interview/${id}/evaluations/${selectedEvalId}/scores`, { scores_json: candidateScores }),
+        isCompleted !== undefined
+          ? api.patch(`/interview/${id}/scores`, { is_completed: isCompleted })
+          : Promise.resolve(),
+      ]);
+      return scoresRes.data.evaluation;
     },
-    onSuccess: (updated) => {
-      setKitData(updated);
-      queryClient.invalidateQueries(['kit', id]);
-      toast.success('Saved', 'Progress saved successfully.');
+    onSuccess: (updatedEval) => {
+      queryClient.setQueryData(['kit', id, 'evaluations'], (old) =>
+        (old || []).map((e) => (e.id === selectedEvalId ? { ...e, ...updatedEval } : e))
+      );
+      if (saveMutation.variables?.isCompleted !== undefined) {
+        setKitData((prev) => ({ ...prev, is_completed: saveMutation.variables.isCompleted }));
+      }
+      toast.success('Saved', 'Scores saved for this candidate.');
     },
-    onError: () => toast.error('Save failed', 'Could not save progress.'),
+    onError: (err) => toast.error('Save failed', err.message === 'No candidate selected'
+      ? 'Select a candidate first.'
+      : 'Could not save scores.'),
+  });
+
+  const createEvalMutation = useMutation({
+    mutationFn: ({ candidateName, candidateRole, candidateExperienceYears }) =>
+      api.post(`/interview/${id}/evaluations`, { candidateName, candidateRole, candidateExperienceYears }),
+    onSuccess: (res) => {
+      refetchEvals();
+      handleSelectCandidate(res.data.evaluation);
+      setShowAddCandidate(false);
+      setNewCandName(''); setNewCandRole(''); setNewCandExp('');
+      toast.success('Candidate added', `${res.data.evaluation.candidate_name} is now selected.`);
+    },
+    onError: (err) => toast.error('Failed', err.response?.data?.error || 'Could not add candidate.'),
   });
 
   const regenerateMutation = useMutation({
@@ -243,55 +298,35 @@ export default function KitView() {
   });
 
   const updateQuestionScore = useCallback((sectionIdx, questionIdx, score) => {
-    setKitData((prev) => ({
+    if (!selectedEvalId) return;
+    const qId = String(kitData.output_json.sections[sectionIdx].questions[questionIdx].id);
+    setCandidateScores((prev) => ({
       ...prev,
-      output_json: {
-        ...prev.output_json,
-        sections: prev.output_json.sections.map((s, si) =>
-          si !== sectionIdx ? s : {
-            ...s,
-            questions: s.questions.map((q, qi) =>
-              qi !== questionIdx ? q : { ...q, score }
-            ),
-          }
-        ),
-      },
+      [qId]: { notes: prev[qId]?.notes ?? '', score },
     }));
-  }, []);
+  }, [selectedEvalId, kitData]);
 
   const updateQuestionNotes = useCallback((sectionIdx, questionIdx, notes) => {
-    setKitData((prev) => ({
+    if (!selectedEvalId) return;
+    const qId = String(kitData.output_json.sections[sectionIdx].questions[questionIdx].id);
+    setCandidateScores((prev) => ({
       ...prev,
-      output_json: {
-        ...prev.output_json,
-        sections: prev.output_json.sections.map((s, si) =>
-          si !== sectionIdx ? s : {
-            ...s,
-            questions: s.questions.map((q, qi) =>
-              qi !== questionIdx ? q : { ...q, notes }
-            ),
-          }
-        ),
-      },
+      [qId]: { score: prev[qId]?.score ?? null, notes },
     }));
-  }, []);
+  }, [selectedEvalId, kitData]);
 
   const resetMutation = useMutation({
     mutationFn: () => {
-      const clearedJson = {
-        ...kitData.output_json,
-        sections: kitData.output_json.sections.map((s) => ({
-          ...s,
-          questions: s.questions.map((q) => ({ ...q, score: null, notes: '' })),
-        })),
-      };
-      return api.patch(`/interview/${id}/scores`, { output_json: clearedJson, is_completed: false });
+      if (!selectedEvalId) throw new Error('No candidate selected');
+      return api.patch(`/interview/${id}/evaluations/${selectedEvalId}/scores`, { scores_json: {} });
     },
     onSuccess: (res) => {
-      setKitData(res.data.kit);
-      queryClient.invalidateQueries(['kit', id]);
+      setCandidateScores({});
+      queryClient.setQueryData(['kit', id, 'evaluations'], (old) =>
+        (old || []).map((e) => (e.id === selectedEvalId ? { ...e, ...res.data.evaluation } : e))
+      );
       setShowResetConfirm(false);
-      toast.success('Scores reset', 'All scores and notes have been cleared.');
+      toast.success('Scores reset', 'All scores cleared for this candidate.');
     },
     onError: () => toast.error('Reset failed', 'Could not clear scores.'),
   });
@@ -312,14 +347,17 @@ export default function KitView() {
       doc.setFontSize(12); doc.setTextColor(79, 70, 229);
       doc.text(`${section.section_name} (${section.weight_percentage}%)`, 14, y);
       y += 8;
-      const tableData = section.questions.map((q) => [
-        `Q${q.id}`,
-        q.question_type === 'fix_the_code' ? `[FIX] ${q.question}\n${q.code_snippet || ''}` : q.question,
-        q.source === 'KB' ? `[KB] ${q.kb_label || ''}` : 'AI',
-        q.best_answer ?? q.strong_answer ?? '',
-        q.score != null ? `${q.score}/5` : 'N/A',
-        q.notes || '',
-      ]);
+      const tableData = section.questions.map((q) => {
+        const s = candidateScores[String(q.id)] || {};
+        return [
+          `Q${q.id}`,
+          q.question_type === 'fix_the_code' ? `[FIX] ${q.question}\n${q.code_snippet || ''}` : q.question,
+          q.source === 'KB' ? `[KB] ${q.kb_label || ''}` : 'AI',
+          q.best_answer ?? q.strong_answer ?? '',
+          s.score != null ? `${s.score}/5` : 'N/A',
+          s.notes || '',
+        ];
+      });
       autoTable(doc, {
         startY: y,
         head: [['#', 'Question', 'Src', 'Expert Answer', 'Score', 'Notes']],
@@ -361,7 +399,7 @@ export default function KitView() {
           'Question': q.question, 'Code Snippet': q.code_snippet || '',
           'Source': q.source, 'KB Label': q.kb_label || '',
           'Expert Answer': q.best_answer ?? q.strong_answer ?? '',
-          'Score': q.score != null ? q.score : '', 'Notes': q.notes || '',
+          'Score': candidateScores[String(q.id)]?.score ?? '', 'Notes': candidateScores[String(q.id)]?.notes || '',
         });
       });
     });
@@ -472,9 +510,12 @@ export default function KitView() {
 
   const kit = kitData.output_json;
   const allQuestions = kit.sections?.flatMap((s) => s.questions) || [];
-  const overallScore = calculateOverallScore(kit.sections);
-  const scoredCount = allQuestions.filter((q) => q.score != null).length;
-  const scorePercent = overallScore ? ((overallScore / 5) * 100).toFixed(0) : null;
+  const scoredEntries = Object.values(candidateScores).filter((v) => v?.score != null);
+  const overallScore = scoredEntries.length > 0
+    ? (scoredEntries.reduce((sum, v) => sum + Number(v.score), 0) / scoredEntries.length).toFixed(1)
+    : null;
+  const scoredCount = scoredEntries.length;
+  const scorePercent = overallScore ? ((Number(overallScore) / 5) * 100).toFixed(0) : null;
   const isRegenerating = regenJob?.status === 'running';
   const regenFailed = regenJob?.status === 'error';
 
@@ -572,7 +613,76 @@ export default function KitView() {
         </div>
       </div>
 
-      {/* Sections */}
+      {/* ── Candidates panel ─────────────────────────────────────────── */}
+      <Card className="border-zinc-200">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-zinc-400" />
+              <span className="text-sm font-semibold text-zinc-900">Candidates</span>
+              {evaluations.length > 0 && (
+                <span className="text-xs text-zinc-400">({evaluations.length})</span>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+              onClick={() => setShowAddCandidate(true)}
+            >
+              <UserPlus className="w-3.5 h-3.5" /> Add Candidate
+            </Button>
+          </div>
+
+          {evaluations.length === 0 ? (
+            <p className="text-sm text-zinc-400 text-center py-3">
+              No candidates yet — add one to start scoring.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {evaluations.map((ev) => {
+                const isSelected = ev.id === selectedEvalId;
+                return (
+                  <button
+                    key={ev.id}
+                    onClick={() => handleSelectCandidate(ev)}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-1.5 rounded-lg border text-left transition-colors text-sm',
+                      isSelected
+                        ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
+                        : 'bg-white border-zinc-200 text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50'
+                    )}
+                  >
+                    {isSelected && <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+                    <span className="font-medium">{ev.candidate_name}</span>
+                    {ev.candidate_role && (
+                      <span className={cn('text-xs', isSelected ? 'text-indigo-500' : 'text-zinc-400')}>
+                        · {ev.candidate_role}
+                      </span>
+                    )}
+                    {ev.overall_score != null && (
+                      <Badge className={cn(
+                        'text-xs px-1.5 py-0 ml-1',
+                        isSelected ? 'bg-indigo-100 text-indigo-700' : 'bg-zinc-100 text-zinc-600'
+                      )}>
+                        {ev.overall_score}/5
+                      </Badge>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {!selectedEvalId && evaluations.length > 0 && (
+            <p className="text-xs text-amber-600 mt-2">
+              Select a candidate above to load their scores.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Sections ─────────────────────────────────────────────────── */}
       <Tabs defaultValue={kit.sections?.[0]?.section_name}>
         <TabsList className="flex-wrap h-auto gap-1 bg-zinc-100 p-1">
           {kit.sections?.map((section) => (
@@ -587,12 +697,13 @@ export default function KitView() {
             {section.questions?.map((question, qIdx) => (
               <QuestionCard
                 key={question.id}
-                question={question}
+                question={qWithScores(question)}
                 questionIdx={qIdx}
                 sectionIdx={sectionIdx}
                 onScoreChange={updateQuestionScore}
                 onNotesChange={updateQuestionNotes}
                 onRevealAnswer={() => setAnswerPanel({ open: true, question })}
+                disabled={!selectedEvalId}
               />
             ))}
           </TabsContent>
@@ -610,10 +721,22 @@ export default function KitView() {
       {/* Sticky Bottom Bar */}
       <div className="fixed bottom-0 left-0 right-0 md:left-64 z-30 bg-white border-t border-zinc-200 shadow-lg">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2 mr-auto">
-            <span className="text-sm font-medium text-zinc-700">{scoredCount}/{allQuestions.length} scored</span>
-            {overallScore && (
-              <span className="text-sm font-semibold text-indigo-600">{overallScore}/5 ({scorePercent}%)</span>
+          <div className="flex items-center gap-2 mr-auto min-w-0">
+            {selectedEval ? (
+              <>
+                <UserCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                <span className="text-sm font-medium text-indigo-700 truncate max-w-[140px]">
+                  {selectedEval.candidate_name}
+                </span>
+                <span className="text-sm text-zinc-500">
+                  {scoredCount}/{allQuestions.length} scored
+                </span>
+                {overallScore && (
+                  <span className="text-sm font-semibold text-indigo-600">{overallScore}/5 ({scorePercent}%)</span>
+                )}
+              </>
+            ) : (
+              <span className="text-sm text-zinc-400 italic">Select a candidate to score</span>
             )}
           </div>
           <Button
@@ -630,16 +753,28 @@ export default function KitView() {
             variant="outline"
             size="sm"
             onClick={() => setShowResetConfirm(true)}
-            disabled={resetMutation.isPending}
-            className="border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
-            title="Clear all scores and notes"
+            disabled={resetMutation.isPending || !selectedEvalId}
+            className="border-zinc-200 text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 disabled:opacity-40"
+            title="Clear all scores for selected candidate"
           >
             <RotateCcw className="w-4 h-4" /> Reset Scores
           </Button>
-          <Button variant="outline" size="sm" onClick={() => saveMutation.mutate({})} disabled={saveMutation.isPending}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => saveMutation.mutate({})}
+            disabled={saveMutation.isPending || !selectedEvalId}
+            className="disabled:opacity-40"
+          >
             <Save className="w-4 h-4" /> Save
           </Button>
-          <Button variant="success" size="sm" onClick={() => saveMutation.mutate({ isCompleted: true })} disabled={saveMutation.isPending}>
+          <Button
+            variant="success"
+            size="sm"
+            onClick={() => saveMutation.mutate({ isCompleted: true })}
+            disabled={saveMutation.isPending || !selectedEvalId}
+            className="disabled:opacity-40"
+          >
             <CheckCircle2 className="w-4 h-4" /> Complete
           </Button>
           <Button variant="outline" size="sm" onClick={exportPDF}>
@@ -693,6 +828,64 @@ export default function KitView() {
             >
               <RotateCcw className="w-4 h-4" />
               {resetMutation.isPending ? 'Resetting...' : 'Yes, Reset Scores'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Candidate dialog */}
+      <Dialog open={showAddCandidate} onOpenChange={(o) => { setShowAddCandidate(o); if (!o) { setNewCandName(''); setNewCandRole(''); setNewCandExp(''); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Candidate</DialogTitle>
+            <DialogDescription>
+              Create an evaluation record for a new candidate. Their scores will be tracked independently.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1.5">
+              <Label>Candidate Name <span className="text-rose-500">*</span></Label>
+              <Input
+                placeholder="e.g. Jane Smith"
+                value={newCandName}
+                onChange={(e) => setNewCandName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && newCandName.trim() && createEvalMutation.mutate({ candidateName: newCandName, candidateRole: newCandRole, candidateExperienceYears: newCandExp || null })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Role Applied For</Label>
+                <Input
+                  placeholder="e.g. Backend Engineer"
+                  value={newCandRole}
+                  onChange={(e) => setNewCandRole(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Years of Experience</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="50"
+                  placeholder="e.g. 4"
+                  value={newCandExp}
+                  onChange={(e) => setNewCandExp(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddCandidate(false)}>Cancel</Button>
+            <Button
+              className="bg-indigo-600 hover:bg-indigo-700"
+              disabled={!newCandName.trim() || createEvalMutation.isPending}
+              onClick={() => createEvalMutation.mutate({
+                candidateName: newCandName,
+                candidateRole: newCandRole || undefined,
+                candidateExperienceYears: newCandExp ? parseInt(newCandExp, 10) : undefined,
+              })}
+            >
+              {createEvalMutation.isPending ? 'Adding...' : 'Add Candidate'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -787,7 +980,7 @@ export default function KitView() {
   );
 }
 
-function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNotesChange, onRevealAnswer }) {
+function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNotesChange, onRevealAnswer, disabled }) {
   const [expanded, setExpanded] = useState(false);
   const isFixCode = question.question_type === 'fix_the_code';
 
@@ -827,7 +1020,7 @@ function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNote
               )}
 
               {/* Score buttons */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className={cn('flex items-center gap-2 flex-wrap', disabled && 'opacity-40 pointer-events-none')}>
                 <span className="text-xs text-zinc-500 shrink-0">Score:</span>
                 {[
                   { label: 'Weak', value: 2, active: 'bg-rose-500 text-white border-rose-500', hover: 'hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700' },
@@ -836,8 +1029,8 @@ function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNote
                 ].map(({ label, value, active, hover }) => (
                   <motion.button
                     key={label}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => onScoreChange(sectionIdx, questionIdx, question.score === value ? null : value)}
+                    whileTap={disabled ? {} : { scale: 0.95 }}
+                    onClick={() => !disabled && onScoreChange(sectionIdx, questionIdx, question.score === value ? null : value)}
                     className={cn(
                       'px-2.5 py-1 rounded-md text-xs font-semibold transition-all border',
                       question.score === value ? active : `bg-white text-zinc-500 border-zinc-200 ${hover}`
@@ -853,6 +1046,7 @@ function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNote
                     max="5"
                     value={question.score ?? ''}
                     onChange={(e) => {
+                      if (disabled) return;
                       const v = parseInt(e.target.value, 10);
                       onScoreChange(sectionIdx, questionIdx, v >= 1 && v <= 5 ? v : null);
                     }}
@@ -895,9 +1089,10 @@ function QuestionCard({ question, sectionIdx, questionIdx, onScoreChange, onNote
             >
               <div className="px-4 pb-4 ml-8">
                 <Textarea
-                  placeholder="Notes for this question..."
+                  placeholder={disabled ? 'Select a candidate to add notes' : 'Notes for this question...'}
                   className="text-xs min-h-[60px] resize-none"
                   value={question.notes || ''}
+                  disabled={disabled}
                   onChange={(e) => onNotesChange(sectionIdx, questionIdx, e.target.value)}
                 />
               </div>
