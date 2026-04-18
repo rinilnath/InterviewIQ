@@ -8,6 +8,7 @@ import {
   CheckCircle2, Save, ArrowLeft, Calendar, Layers,
   RefreshCw, Eye, Bug, X, AlertTriangle, Square,
   Globe, Lock, RotateCcw, UserPlus, Users, UserCheck,
+  Pencil, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,6 +39,16 @@ const GENERATION_STEPS = [
   { label: 'Generating scoring rubrics...', progress: 75 },
   { label: 'Finalizing interview kit...', progress: 90 },
 ];
+
+const INTERVIEW_STAGES = [
+  { value: 'scheduled',   label: 'Scheduled',   color: 'bg-zinc-100 text-zinc-600 border-zinc-200' },
+  { value: 'in_progress', label: 'In Progress',  color: 'bg-blue-100 text-blue-700 border-blue-200' },
+  { value: 'completed',   label: 'Completed',    color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+];
+
+function stageMeta(value) {
+  return INTERVIEW_STAGES.find((s) => s.value === value) || INTERVIEW_STAGES[0];
+}
 
 // ---------- Answer renderer: parses ```lang\ncode\n``` fences ----------
 function AnswerRenderer({ text }) {
@@ -143,6 +154,10 @@ export default function KitView() {
   const [newCandName, setNewCandName] = useState('');
   const [newCandRole, setNewCandRole] = useState('');
   const [newCandExp, setNewCandExp] = useState('');
+  const [checkedEvalIds, setCheckedEvalIds] = useState(new Set());
+  const [showRemoved, setShowRemoved] = useState(false);
+  const [editingEvalId, setEditingEvalId] = useState(null);
+  const [editFields, setEditFields] = useState({ name: '', role: '', exp: '' });
 
   const { startJob, updateJob, completeJob, failJob, clearJob, getJob } = useRegenerationStore();
   const regenJob = useRegenerationStore((s) => s.jobs[id]);
@@ -162,7 +177,7 @@ export default function KitView() {
   // Fetch candidate evaluations once the kit is completed
   const { data: evaluations = [], refetch: refetchEvals } = useQuery({
     queryKey: ['kit', id, 'evaluations'],
-    queryFn: async () => (await api.get(`/interview/${id}/evaluations`)).data.evaluations,
+    queryFn: async () => (await api.get(`/interview/${id}/evaluations?include_removed=true`)).data.evaluations,
     enabled: kitData?.status === 'completed',
     staleTime: 30_000,
   });
@@ -170,6 +185,15 @@ export default function KitView() {
   const selectedEval = useMemo(
     () => evaluations.find((e) => e.id === selectedEvalId) || null,
     [evaluations, selectedEvalId],
+  );
+
+  const activeEvaluations = useMemo(
+    () => evaluations.filter((e) => !e.removed_at),
+    [evaluations],
+  );
+  const removedEvaluations = useMemo(
+    () => evaluations.filter((e) => e.removed_at),
+    [evaluations],
   );
 
   const handleSelectCandidate = useCallback((ev) => {
@@ -330,6 +354,94 @@ export default function KitView() {
     },
     onError: () => toast.error('Reset failed', 'Could not clear scores.'),
   });
+
+  const stageMutation = useMutation({
+    mutationFn: ({ evalId, stage }) =>
+      api.patch(`/interview/${id}/evaluations/${evalId}/stage`, { interviewStage: stage }),
+    onSuccess: (res) => {
+      queryClient.setQueryData(['kit', id, 'evaluations'], (old) =>
+        (old || []).map((e) => (e.id === res.data.evaluation.id ? { ...e, ...res.data.evaluation } : e))
+      );
+    },
+    onError: () => toast.error('Stage update failed', 'Could not change interview stage.'),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (evalId) => api.patch(`/interview/${id}/evaluations/${evalId}/remove`),
+    onSuccess: (res, evalId) => {
+      queryClient.setQueryData(['kit', id, 'evaluations'], (old) =>
+        (old || []).map((e) => (e.id === evalId ? { ...e, removed_at: res.data.evaluation.removed_at } : e))
+      );
+      if (selectedEvalId === evalId) { setSelectedEvalId(null); setCandidateScores({}); }
+      setCheckedEvalIds((prev) => { const next = new Set(prev); next.delete(evalId); return next; });
+      toast.success('Candidate removed', 'Use "Show removed" to restore.');
+    },
+    onError: () => toast.error('Remove failed', 'Could not remove candidate.'),
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: (evalId) => api.patch(`/interview/${id}/evaluations/${evalId}/restore`),
+    onSuccess: (_, evalId) => {
+      queryClient.setQueryData(['kit', id, 'evaluations'], (old) =>
+        (old || []).map((e) => (e.id === evalId ? { ...e, removed_at: null } : e))
+      );
+      toast.success('Candidate restored');
+    },
+    onError: () => toast.error('Restore failed', 'Could not restore candidate.'),
+  });
+
+  const bulkRemoveMutation = useMutation({
+    mutationFn: (evalIds) =>
+      api.post(`/interview/${id}/evaluations/bulk-remove`, { evalIds }),
+    onSuccess: (_, evalIds) => {
+      const removedAt = new Date().toISOString();
+      queryClient.setQueryData(['kit', id, 'evaluations'], (old) =>
+        (old || []).map((e) => (evalIds.includes(e.id) ? { ...e, removed_at: removedAt } : e))
+      );
+      if (evalIds.includes(selectedEvalId)) { setSelectedEvalId(null); setCandidateScores({}); }
+      setCheckedEvalIds(new Set());
+      toast.success(`${evalIds.length} candidate${evalIds.length !== 1 ? 's' : ''} removed`);
+    },
+    onError: () => toast.error('Bulk remove failed', 'Could not remove selected candidates.'),
+  });
+
+  const updateEvalMutation = useMutation({
+    mutationFn: ({ evalId, name, role, exp }) =>
+      api.patch(`/interview/${id}/evaluations/${evalId}`, {
+        candidateName: name,
+        candidateRole: role || null,
+        candidateExperienceYears: exp ? parseInt(exp, 10) : null,
+      }),
+    onSuccess: (res) => {
+      queryClient.setQueryData(['kit', id, 'evaluations'], (old) =>
+        (old || []).map((e) => (e.id === res.data.evaluation.id ? { ...e, ...res.data.evaluation } : e))
+      );
+      setEditingEvalId(null);
+      setEditFields({ name: '', role: '', exp: '' });
+      toast.success('Candidate updated');
+    },
+    onError: (err) => toast.error('Update failed', err.response?.data?.error || 'Could not update candidate.'),
+  });
+
+  const startEditing = useCallback((ev) => {
+    setEditingEvalId(ev.id);
+    setEditFields({
+      name: ev.candidate_name || '',
+      role: ev.candidate_role || '',
+      exp: ev.candidate_experience_years != null ? String(ev.candidate_experience_years) : '',
+    });
+  }, []);
+
+  const stopEditing = useCallback(() => {
+    setEditingEvalId(null);
+    setEditFields({ name: '', role: '', exp: '' });
+  }, []);
+
+  const cycleStage = useCallback((ev) => {
+    const stages = ['scheduled', 'in_progress', 'completed'];
+    const idx = stages.indexOf(ev.interview_stage || 'scheduled');
+    stageMutation.mutate({ evalId: ev.id, stage: stages[(idx + 1) % stages.length] });
+  }, [stageMutation]);
 
   const exportPDF = () => {
     if (!kitData) return;
@@ -620,64 +732,210 @@ export default function KitView() {
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4 text-zinc-400" />
               <span className="text-sm font-semibold text-zinc-900">Candidates</span>
-              {evaluations.length > 0 && (
-                <span className="text-xs text-zinc-400">({evaluations.length})</span>
+              {activeEvaluations.length > 0 && (
+                <span className="text-xs text-zinc-400">({activeEvaluations.length})</span>
               )}
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-              onClick={() => setShowAddCandidate(true)}
-            >
-              <UserPlus className="w-3.5 h-3.5" /> Add Candidate
-            </Button>
+            <div className="flex items-center gap-2">
+              {checkedEvalIds.size > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-xs border-rose-200 text-rose-600 hover:bg-rose-50"
+                  onClick={() => bulkRemoveMutation.mutate([...checkedEvalIds])}
+                  disabled={bulkRemoveMutation.isPending}
+                >
+                  <X className="w-3 h-3" /> Remove ({checkedEvalIds.size})
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                onClick={() => setShowAddCandidate(true)}
+              >
+                <UserPlus className="w-3.5 h-3.5" /> Add Candidate
+              </Button>
+            </div>
           </div>
 
-          {evaluations.length === 0 ? (
+          {activeEvaluations.length === 0 ? (
             <p className="text-sm text-zinc-400 text-center py-3">
               No candidates yet — add one to start scoring.
             </p>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              {evaluations.map((ev) => {
+            <div className="space-y-1">
+              {activeEvaluations.map((ev) => {
                 const isSelected = ev.id === selectedEvalId;
+                const isChecked = checkedEvalIds.has(ev.id);
+                const isEditing = editingEvalId === ev.id;
+                const hasScores = Object.keys(ev.scores_json || {}).length > 0;
+                const sm = stageMeta(ev.interview_stage);
                 return (
-                  <button
+                  <div
                     key={ev.id}
-                    onClick={() => handleSelectCandidate(ev)}
                     className={cn(
-                      'flex items-center gap-2 px-3 py-1.5 rounded-lg border text-left transition-colors text-sm',
+                      'flex items-center gap-2 px-2 py-1.5 rounded-lg border transition-colors',
                       isSelected
-                        ? 'bg-indigo-50 border-indigo-300 text-indigo-800'
-                        : 'bg-white border-zinc-200 text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50'
+                        ? 'bg-indigo-50 border-indigo-300'
+                        : 'bg-white border-zinc-100 hover:border-zinc-200',
                     )}
                   >
-                    {isSelected && <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
-                    <span className="font-medium">{ev.candidate_name}</span>
-                    {ev.candidate_role && (
-                      <span className={cn('text-xs', isSelected ? 'text-indigo-500' : 'text-zinc-400')}>
-                        · {ev.candidate_role}
-                      </span>
+                    {/* Checkbox */}
+                    <input
+                      type="checkbox"
+                      className="w-3.5 h-3.5 rounded accent-indigo-600 shrink-0 cursor-pointer"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        setCheckedEvalIds((prev) => {
+                          const next = new Set(prev);
+                          e.target.checked ? next.add(ev.id) : next.delete(ev.id);
+                          return next;
+                        });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+
+                    {isEditing ? (
+                      /* ── Edit mode ── */
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <Input
+                          value={editFields.name}
+                          onChange={(e) => setEditFields((f) => ({ ...f, name: e.target.value }))}
+                          disabled={hasScores}
+                          title={hasScores ? 'Name cannot be changed once scoring has started' : undefined}
+                          className="h-6 text-xs px-1.5 w-28"
+                          placeholder="Name"
+                        />
+                        <Input
+                          value={editFields.role}
+                          onChange={(e) => setEditFields((f) => ({ ...f, role: e.target.value }))}
+                          className="h-6 text-xs px-1.5 w-28"
+                          placeholder="Role"
+                        />
+                        <Input
+                          type="number"
+                          min="0"
+                          max="50"
+                          value={editFields.exp}
+                          onChange={(e) => setEditFields((f) => ({ ...f, exp: e.target.value }))}
+                          className="h-6 text-xs px-1.5 w-14"
+                          placeholder="Yrs"
+                        />
+                        <button
+                          onClick={() => updateEvalMutation.mutate({ evalId: ev.id, name: editFields.name, role: editFields.role, exp: editFields.exp })}
+                          disabled={!editFields.name.trim() || updateEvalMutation.isPending}
+                          className="p-1 text-emerald-600 hover:text-emerald-800 disabled:opacity-40"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={stopEditing} className="p-1 text-zinc-400 hover:text-zinc-600">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Stage badge — click to cycle */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); cycleStage(ev); }}
+                          className={cn(
+                            'shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded-full border whitespace-nowrap transition-colors',
+                            sm.color,
+                          )}
+                        >
+                          {sm.label}
+                        </button>
+
+                        {/* Main clickable area */}
+                        <button
+                          onClick={() => handleSelectCandidate(ev)}
+                          className="flex items-center gap-1.5 flex-1 min-w-0 text-left"
+                        >
+                          {isSelected && <UserCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+                          <span className={cn('font-medium text-sm truncate', isSelected ? 'text-indigo-800' : 'text-zinc-900')}>
+                            {ev.candidate_name}
+                          </span>
+                          {ev.candidate_role && (
+                            <span className="text-xs text-zinc-400 truncate">· {ev.candidate_role}</span>
+                          )}
+                          {ev.candidate_experience_years != null && (
+                            <span className="text-xs text-zinc-400 shrink-0">{ev.candidate_experience_years}yr</span>
+                          )}
+                          {ev.overall_score != null && (
+                            <Badge className={cn(
+                              'text-[10px] px-1.5 py-0 shrink-0',
+                              isSelected ? 'bg-indigo-100 text-indigo-700' : 'bg-zinc-100 text-zinc-600',
+                            )}>
+                              {ev.overall_score}/5
+                            </Badge>
+                          )}
+                        </button>
+
+                        {/* Edit */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); startEditing(ev); }}
+                          className="shrink-0 p-1 text-zinc-300 hover:text-zinc-600 rounded transition-colors"
+                          title="Edit candidate"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+
+                        {/* Remove */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removeMutation.mutate(ev.id); }}
+                          className="shrink-0 p-1 text-zinc-300 hover:text-rose-600 rounded transition-colors"
+                          title="Remove candidate"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </>
                     )}
-                    {ev.overall_score != null && (
-                      <Badge className={cn(
-                        'text-xs px-1.5 py-0 ml-1',
-                        isSelected ? 'bg-indigo-100 text-indigo-700' : 'bg-zinc-100 text-zinc-600'
-                      )}>
-                        {ev.overall_score}/5
-                      </Badge>
-                    )}
-                  </button>
+                  </div>
                 );
               })}
             </div>
           )}
 
-          {!selectedEvalId && evaluations.length > 0 && (
+          {!selectedEvalId && activeEvaluations.length > 0 && (
             <p className="text-xs text-amber-600 mt-2">
               Select a candidate above to load their scores.
             </p>
+          )}
+
+          {/* Show removed toggle */}
+          {removedEvaluations.length > 0 && (
+            <div className="mt-3 border-t border-zinc-100 pt-2">
+              <button
+                onClick={() => setShowRemoved((v) => !v)}
+                className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                <ChevronDown className={cn('w-3 h-3 transition-transform', showRemoved && 'rotate-180')} />
+                {showRemoved ? 'Hide' : 'Show'} removed ({removedEvaluations.length})
+              </button>
+              {showRemoved && (
+                <div className="mt-2 space-y-1">
+                  {removedEvaluations.map((ev) => (
+                    <div
+                      key={ev.id}
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-zinc-100 bg-zinc-50"
+                    >
+                      <Badge className="text-[10px] bg-zinc-200 text-zinc-500 border-0 shrink-0">Removed</Badge>
+                      <span className="text-sm text-zinc-400 font-medium truncate flex-1">{ev.candidate_name}</span>
+                      {ev.candidate_role && (
+                        <span className="text-xs text-zinc-300 truncate">· {ev.candidate_role}</span>
+                      )}
+                      <button
+                        onClick={() => restoreMutation.mutate(ev.id)}
+                        disabled={restoreMutation.isPending}
+                        className="shrink-0 text-xs text-indigo-500 hover:text-indigo-700 font-medium disabled:opacity-40"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
