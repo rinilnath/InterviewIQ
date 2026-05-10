@@ -14,7 +14,7 @@ function createTransport() {
   });
 }
 
-const appUrl = () => (process.env.APP_URL || 'https://your-app.onrender.com').replace(/\/$/, '');
+const appUrl = () => (process.env.APP_URL || 'https://interviewiq-n403.onrender.com').replace(/\/$/, '');
 
 // ─── Logging helpers ──────────────────────────────────────────────────────────
 
@@ -181,4 +181,62 @@ async function sendSupportEmail({ fromName, fromEmail, fromTier, fromUserId, sub
   }
 }
 
-module.exports = { sendWelcomeEmail, sendSupportEmail };
+// ─── Invite email ─────────────────────────────────────────────────────────────
+
+async function sendInviteEmail({ toEmail, toName, fromName, token }) {
+  const transport = createTransport();
+  const subject   = "You've been invited to InterviewIQ";
+  const logId     = await logEmail({ emailType: 'invite', recipientEmail: toEmail, recipientName: toName || toEmail, subject });
+
+  if (!transport) {
+    const msg = 'SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS';
+    console.warn('[Email] Invite email not sent to', toEmail, '—', msg);
+    await markLogFailed(logId, msg);
+    return;
+  }
+
+  const registerUrl = `${appUrl()}/register?token=${token}`;
+
+  const html = emailShell({
+    preheader: `${fromName} has invited you to join InterviewIQ.`,
+    trackingId: logId,
+    body: `
+      <div style="background:#18181b;padding:32px 32px 28px">
+        <p style="margin:0 0 6px;font-size:12px;color:#71717a;text-transform:uppercase;letter-spacing:1px">You're invited</p>
+        <h1 style="margin:0;font-size:22px;font-weight:700;color:#fff;line-height:1.3">Hi ${toName || 'there'},<br>you've been invited!</h1>
+      </div>
+      <div style="padding:28px 32px">
+        <p style="margin:0 0 20px;font-size:14px;color:#52525b;line-height:1.6">
+          <strong>${fromName}</strong> has invited you to join InterviewIQ — your team's AI-powered interview management platform.
+        </p>
+        <p style="margin:0 0 20px;font-size:13px;color:#71717a">
+          Click the button below to set up your account. This link expires in <strong>48 hours</strong>.
+        </p>
+        <div style="text-align:center;margin-bottom:24px">
+          <a href="${registerUrl}" style="display:inline-block;background:#18181b;color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 32px;border-radius:10px">
+            Accept Invitation →
+          </a>
+        </div>
+        <p style="margin:0;font-size:12px;color:#a1a1aa;text-align:center;line-height:1.6">
+          If you weren't expecting this invitation, you can safely ignore this email.<br>
+          — The InterviewIQ Team
+        </p>
+      </div>`,
+  });
+
+  try {
+    await transport.sendMail({
+      from:    `"InterviewIQ" <${process.env.SMTP_USER}>`,
+      to:      toEmail,
+      subject,
+      text:    `Hi ${toName || 'there'},\n\n${fromName} has invited you to join InterviewIQ.\n\nClick the link below to set up your account (expires in 48 hours):\n${registerUrl}\n\nIf you weren't expecting this, ignore this email.\n\n— The InterviewIQ Team`,
+      html,
+    });
+    console.info('[Email] Invite email sent to', toEmail);
+  } catch (err) {
+    console.error('[Email] Invite email failed for', toEmail, ':', err.message);
+    await markLogFailed(logId, err.message);
+  }
+}
+
+module.exports = { sendWelcomeEmail, sendSupportEmail, sendInviteEmail };

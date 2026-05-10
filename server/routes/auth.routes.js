@@ -1,19 +1,56 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const crypto  = require('crypto');
+const bcrypt  = require('bcryptjs');
+const jwt     = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const supabase = require('../services/supabase.service');
+const supabase  = require('../services/supabase.service');
 const { verifyToken } = require('../middleware/auth.middleware');
+const { sendWelcomeEmail } = require('../services/email.service');
 
 const router = express.Router();
 
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 5,
   message: { error: 'Too many login attempts. Please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+const validateInviteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many validation attempts. Please try again later.' },
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many registration attempts. Please try again later.' },
+});
+
+async function verifyTurnstile(token, remoteIp) {
+  if (!process.env.TURNSTILE_SECRET_KEY) return true; // skip in dev if not configured
+  try {
+    const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({
+        secret:   process.env.TURNSTILE_SECRET_KEY,
+        response: token,
+        remoteip: remoteIp,
+      }),
+    });
+    const data = await res.json();
+    return data.success === true;
+  } catch {
+    return false;
+  }
+}
 
 function generateToken(userId) {
   return jwt.sign({ userId }, process.env.JWT_SECRET, {
@@ -33,10 +70,18 @@ function setTokenCookie(res, token) {
 // POST /api/auth/login
 router.post('/login', loginLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, turnstileToken, website } = req.body;
+
+    // Honeypot: bots fill this field, humans don't see it
+    if (website) return res.status(200).json({ message: 'ok' });
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    if (process.env.TURNSTILE_SECRET_KEY) {
+      const ok = await verifyTurnstile(turnstileToken, req.ip);
+      if (!ok) return res.status(400).json({ error: 'Bot verification failed.' });
     }
 
     const { data: user, error } = await supabase
@@ -73,6 +118,101 @@ router.post('/login', loginLimiter, async (req, res) => {
   } catch (err) {
     console.error('Login error:', err);
     return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/auth/invite/validate?token=xxx — public, validates an invite token
+router.get('/invite/validate', validateInviteLimiter, async (req, res) => {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ error: 'Token is required.' });
+
+    const { data: invite, error } = await supabase
+      .from('user_invites')
+      .select('email, invited_name, used_at, revoked_at, expires_at')
+      .eq('token', token)
+      .maybeSingle();
+
+    if (error || !invite) return res.status(404).json({ error: 'Invitation not found.' });
+    if (invite.used_at)    return res.status(410).json({ error: 'This invitation has already been used.' });
+    if (invite.revoked_at) return res.status(410).json({ error: 'This invitation has been revoked.' });
+    if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: 'This invitation has expired.' });
+
+    return res.json({ email: invite.email, name: invite.invited_name });
+  } catch (err) {
+    console.error('Validate invite error:', err);
+    return res.status(500).json({ error: 'Server error.' });
+  }
+});
+
+// POST /api/auth/register — complete invite-based registration
+router.post('/register', registerLimiter, async (req, res) => {
+  try {
+    const { token, name, password, turnstileToken, website } = req.body;
+
+    // Honeypot
+    if (website) return res.status(200).json({ message: 'ok' });
+
+    if (!token || !name || !password) {
+      return res.status(400).json({ error: 'Token, name, and password are required.' });
+    }
+    if (name.trim().length < 2 || name.trim().length > 100) {
+      return res.status(400).json({ error: 'Name must be 2–100 characters.' });
+    }
+    if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters with uppercase, lowercase, and a digit.' });
+    }
+
+    if (process.env.TURNSTILE_SECRET_KEY) {
+      const ok = await verifyTurnstile(turnstileToken, req.ip);
+      if (!ok) return res.status(400).json({ error: 'Bot verification failed.' });
+    }
+
+    const { data: invite, error: inviteErr } = await supabase
+      .from('user_invites')
+      .select('id, email, used_at, revoked_at, expires_at')
+      .eq('token', token)
+      .maybeSingle();
+
+    if (inviteErr || !invite) return res.status(404).json({ error: 'Invitation not found.' });
+    if (invite.used_at)    return res.status(410).json({ error: 'This invitation has already been used.' });
+    if (invite.revoked_at) return res.status(410).json({ error: 'This invitation has been revoked.' });
+    if (new Date(invite.expires_at) < new Date()) return res.status(410).json({ error: 'This invitation has expired.' });
+
+    const email = invite.email; // authoritative — not from request body
+
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+
+    if (existingUser) return res.status(409).json({ error: 'An account with this email already exists.' });
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const { error: insertErr } = await supabase
+      .from('users')
+      .insert({
+        name: name.trim(),
+        email,
+        password_hash: passwordHash,
+        role:          'user',
+        is_active:     true,
+        subscription_tier: 'free',
+      });
+
+    if (insertErr) throw insertErr;
+
+    await supabase
+      .from('user_invites')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', invite.id);
+
+    return res.status(201).json({ message: 'Account created. Please log in.' });
+  } catch (err) {
+    console.error('Register error:', err);
+    return res.status(500).json({ error: 'Server error during registration.' });
   }
 });
 

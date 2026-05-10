@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { useState } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Loader2, BrainCircuit } from 'lucide-react';
@@ -21,6 +21,29 @@ export function LoginForm() {
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
   const [serverError, setServerError] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const widgetRef = useRef(null);
+  const widgetId  = useRef(null);
+
+  const siteKeySet = !!import.meta.env.VITE_TURNSTILE_SITE_KEY;
+
+  const mountTurnstile = useCallback(() => {
+    if (!window.turnstile || !widgetRef.current || widgetId.current !== null) return;
+    widgetId.current = window.turnstile.render(widgetRef.current, {
+      sitekey:           import.meta.env.VITE_TURNSTILE_SITE_KEY,
+      callback:          (t) => setTurnstileToken(t),
+      'expired-callback': () => setTurnstileToken(''),
+      'error-callback':   () => setTurnstileToken(''),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!siteKeySet) return;
+    const interval = setInterval(() => {
+      if (window.turnstile) { clearInterval(interval); mountTurnstile(); }
+    }, 200);
+    return () => clearInterval(interval);
+  }, [siteKeySet, mountTurnstile]);
 
   const {
     register,
@@ -33,11 +56,18 @@ export function LoginForm() {
   const onSubmit = async (data) => {
     setServerError('');
     try {
-      const res = await api.post('/auth/login', data);
+      const res = await api.post('/auth/login', {
+        ...data,
+        ...(turnstileToken ? { turnstileToken } : {}),
+      });
       setAuth(res.data.user, res.data.token);
       navigate('/dashboard');
     } catch (err) {
       setServerError(err.response?.data?.error || 'Login failed. Please try again.');
+      if (widgetId.current !== null && window.turnstile) {
+        window.turnstile.reset(widgetId.current);
+        setTurnstileToken('');
+      }
     }
   };
 
@@ -63,6 +93,16 @@ export function LoginForm() {
           </CardHeader>
           <CardContent className="px-8 pb-8">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              {/* Honeypot — bots fill this, humans don't see it */}
+              <input
+                type="text"
+                name="website"
+                autoComplete="off"
+                style={{ display: 'none' }}
+                tabIndex={-1}
+                aria-hidden="true"
+              />
+
               {serverError && (
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95 }}
@@ -103,10 +143,13 @@ export function LoginForm() {
                 )}
               </div>
 
+              {/* Cloudflare Turnstile widget */}
+              {siteKeySet && <div ref={widgetRef} />}
+
               <Button
                 type="submit"
                 className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700"
-                disabled={isSubmitting}
+                disabled={isSubmitting || (siteKeySet && !turnstileToken)}
               >
                 {isSubmitting ? (
                   <>

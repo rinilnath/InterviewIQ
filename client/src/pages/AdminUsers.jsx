@@ -18,6 +18,9 @@ import {
   AlertTriangle,
   RefreshCw,
   Trash2,
+  Mail,
+  RotateCcw,
+  Ban,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -263,6 +266,140 @@ function EmailLogs() {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Invites Overview (admin full-control view) ───────────────────────────────
+
+const INVITE_STATUS_META = {
+  pending:  { color: 'bg-amber-100 text-amber-700',    label: 'Pending' },
+  used:     { color: 'bg-emerald-100 text-emerald-700', label: 'Used' },
+  expired:  { color: 'bg-zinc-100 text-zinc-500',       label: 'Expired' },
+  revoked:  { color: 'bg-rose-100 text-rose-600',       label: 'Revoked' },
+};
+
+function InvitesOverview() {
+  const queryClient = useQueryClient();
+
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['admin', 'invites'],
+    queryFn:  async () => (await api.get('/invites')).data,
+    staleTime: 30_000,
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: (id) => api.delete(`/invites/${id}`),
+    onSuccess: () => { queryClient.invalidateQueries(['admin', 'invites']); toast.success('Revoked', 'Invite revoked.'); },
+    onError:   (err) => toast.error('Failed', err.response?.data?.error || 'Could not revoke invite.'),
+  });
+
+  const resendMutation = useMutation({
+    mutationFn: (id) => api.post(`/invites/${id}/resend`),
+    onSuccess: () => { queryClient.invalidateQueries(['admin', 'invites']); toast.success('Resent', 'Invite email resent.'); },
+    onError:   (err) => toast.error('Failed', err.response?.data?.error || 'Could not resend invite.'),
+  });
+
+  const invites = data?.invites || [];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h3 className="text-base font-semibold text-zinc-900">Invites Overview</h3>
+          <span className="text-xs text-zinc-400">{invites.length} total</span>
+        </div>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-800 transition-colors"
+        >
+          <RefreshCw className={`w-3 h-3 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="h-24 rounded-xl bg-zinc-50 border border-zinc-100 animate-pulse" />
+      ) : invites.length === 0 ? (
+        <div className="text-center py-8 text-sm text-zinc-400 border border-zinc-100 rounded-xl bg-zinc-50">
+          No invites have been sent
+        </div>
+      ) : (
+        <Card className="border-zinc-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-100 bg-zinc-50">
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Email</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Invited By</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Sent</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Expires</th>
+                  <th className="text-left px-4 py-3 font-medium text-zinc-500">Status</th>
+                  <th className="text-right px-4 py-3 font-medium text-zinc-500">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invites.map((inv) => {
+                  const meta      = INVITE_STATUS_META[inv.status] || INVITE_STATUS_META.pending;
+                  const canResend = inv.status === 'pending' || inv.status === 'expired';
+                  const canRevoke = inv.status === 'pending';
+                  return (
+                    <tr key={inv.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50">
+                      <td className="px-4 py-3 font-medium text-zinc-900">{inv.invited_name || '—'}</td>
+                      <td className="px-4 py-3 text-zinc-600 text-xs">{inv.email}</td>
+                      <td className="px-4 py-3 text-zinc-500 text-xs">{inv.invited_by_name || '—'}</td>
+                      <td className="px-4 py-3 text-zinc-400 text-xs whitespace-nowrap">
+                        {new Date(inv.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </td>
+                      <td className="px-4 py-3 text-zinc-400 text-xs whitespace-nowrap">
+                        {new Date(inv.expires_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${meta.color}`}>
+                          {meta.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {canResend && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-zinc-600 hover:text-indigo-600"
+                              onClick={() => resendMutation.mutate(inv.id)}
+                              disabled={resendMutation.isPending}
+                              title="Resend invite"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                            </Button>
+                          )}
+                          {canRevoke && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                              onClick={() => revokeMutation.mutate(inv.id)}
+                              disabled={revokeMutation.isPending}
+                              title="Revoke invite"
+                            >
+                              <Ban className="w-3 h-3" />
+                            </Button>
+                          )}
+                          {!canResend && !canRevoke && (
+                            <span className="text-zinc-300 text-xs">—</span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -845,6 +982,9 @@ export default function AdminUsers() {
 
       {/* Deletion Requests */}
       <DeletionRequests />
+
+      {/* Invites Overview */}
+      <InvitesOverview />
 
       {/* Email Logs */}
       <EmailLogs />

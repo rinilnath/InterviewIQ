@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { useGeneratingKitsStore } from '@/store/generatingKitsStore';
 
 import Login from '@/pages/Login';
+import Register from '@/pages/Register';
 import Dashboard from '@/pages/Dashboard';
 import GenerateKit from '@/pages/GenerateKit';
 import KitView from '@/pages/KitView';
@@ -119,7 +120,8 @@ export default function App() {
     <BrowserRouter>
       <AuthInitializer>
         <Routes>
-          <Route path="/login" element={<Login />} />
+          <Route path="/login"    element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<Dashboard />} />

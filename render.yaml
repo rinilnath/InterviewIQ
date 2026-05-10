@@ -51,3 +51,5 @@ services:
         sync: false
       - key: SMTP_PASS
         sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
