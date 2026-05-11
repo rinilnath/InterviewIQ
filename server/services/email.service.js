@@ -1,18 +1,7 @@
-const nodemailer = require('nodemailer');
-const supabase   = require('./supabase.service');
+const supabase = require('./supabase.service');
 
-// ─── Transport ────────────────────────────────────────────────────────────────
-
-function createTransport() {
-  const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS } = process.env;
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
-  return nodemailer.createTransport({
-    host:   SMTP_HOST,
-    port:   parseInt(SMTP_PORT || '587'),
-    secure: SMTP_SECURE === 'true',
-    auth:   { user: SMTP_USER, pass: SMTP_PASS },
-  });
-}
+const RESEND_API = 'https://api.resend.com/emails';
+const FROM       = 'InterviewIQ <onboarding@resend.dev>';
 
 const appUrl = () => (process.env.APP_URL || 'https://interviewiq-n403.onrender.com').replace(/\/$/, '');
 
@@ -34,6 +23,30 @@ async function markLogFailed(logId, errorMessage) {
     .from('email_logs')
     .update({ status: 'failed', error: errorMessage })
     .eq('id', logId);
+}
+
+// ─── Resend send helper ───────────────────────────────────────────────────────
+
+async function sendViaResend({ to, subject, html, text, replyTo }) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error('RESEND_API_KEY is not set');
+
+  const body = { from: FROM, to: [to], subject, html, text };
+  if (replyTo) body.reply_to = replyTo;
+
+  const res = await fetch(RESEND_API, {
+    method:  'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text();
+    throw new Error(`Resend API ${res.status}: ${detail}`);
+  }
 }
 
 // ─── HTML shell ───────────────────────────────────────────────────────────────
@@ -69,16 +82,8 @@ ${pixel}
 // ─── Welcome email ────────────────────────────────────────────────────────────
 
 async function sendWelcomeEmail({ name, email, password, userId }) {
-  const transport = createTransport();
-  const logId     = await logEmail({ emailType: 'welcome', recipientEmail: email, recipientName: name, subject: "You've been granted access to InterviewIQ", userId });
-
-  if (!transport) {
-    const msg = 'SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS in environment variables';
-    console.warn('[Email] Welcome email not sent to', email, '—', msg);
-    await markLogFailed(logId, msg);
-    return;
-  }
-
+  const subject = "You've been granted access to InterviewIQ";
+  const logId   = await logEmail({ emailType: 'welcome', recipientEmail: email, recipientName: name, subject, userId });
   const loginUrl = `${appUrl()}/login`;
 
   const html = emailShell({
@@ -116,12 +121,11 @@ async function sendWelcomeEmail({ name, email, password, userId }) {
   });
 
   try {
-    await transport.sendMail({
-      from:    `"InterviewIQ" <${process.env.SMTP_USER}>`,
+    await sendViaResend({
       to:      email,
-      subject: "You've been granted access to InterviewIQ",
-      text:    `Hi ${name},\n\nYour InterviewIQ account is ready.\n\nEmail: ${email}\nTemporary password: ${password}\n\nLog in at: ${loginUrl}\n\nPlease change your password after your first login.`,
+      subject,
       html,
+      text: `Hi ${name},\n\nYour InterviewIQ account is ready.\n\nEmail: ${email}\nTemporary password: ${password}\n\nLog in at: ${loginUrl}\n\nPlease change your password after your first login.`,
     });
     console.info('[Email] Welcome email sent to', email);
   } catch (err) {
@@ -133,12 +137,11 @@ async function sendWelcomeEmail({ name, email, password, userId }) {
 // ─── Support ticket email ─────────────────────────────────────────────────────
 
 async function sendSupportEmail({ fromName, fromEmail, fromTier, fromUserId, subject, message }) {
-  const transport    = createTransport();
   const supportEmail = process.env.SUPPORT_EMAIL;
   const logId        = await logEmail({ emailType: 'support', recipientEmail: supportEmail || 'unconfigured', recipientName: 'Admin', subject, userId: fromUserId });
 
-  if (!transport || !supportEmail) {
-    const msg = !transport ? 'SMTP not configured' : 'SUPPORT_EMAIL not set';
+  if (!supportEmail) {
+    const msg = 'SUPPORT_EMAIL not set';
     console.warn('[Email] Support ticket not delivered —', msg, '| From:', fromEmail, '| Subject:', subject);
     await markLogFailed(logId, msg);
     return false;
@@ -164,13 +167,12 @@ async function sendSupportEmail({ fromName, fromEmail, fromTier, fromUserId, sub
   });
 
   try {
-    await transport.sendMail({
-      from:    `"InterviewIQ" <${process.env.SMTP_USER}>`,
+    await sendViaResend({
       to:      supportEmail,
-      replyTo: `"${fromName}" <${fromEmail}>`,
       subject: `[InterviewIQ Support] ${subject}`,
-      text:    `From: ${fromName} <${fromEmail}>\nPlan: ${fromTier}\n\n${message}`,
       html,
+      text:    `From: ${fromName} <${fromEmail}>\nPlan: ${fromTier}\n\n${message}`,
+      replyTo: `${fromName} <${fromEmail}>`,
     });
     console.info('[Email] Support ticket sent from', fromEmail);
     return true;
@@ -184,18 +186,9 @@ async function sendSupportEmail({ fromName, fromEmail, fromTier, fromUserId, sub
 // ─── Invite email ─────────────────────────────────────────────────────────────
 
 async function sendInviteEmail({ toEmail, toName, fromName, token }) {
-  const transport = createTransport();
-  const subject   = "You've been invited to InterviewIQ";
-  const logId     = await logEmail({ emailType: 'invite', recipientEmail: toEmail, recipientName: toName || toEmail, subject });
-
-  if (!transport) {
-    const msg = 'SMTP not configured — set SMTP_HOST, SMTP_USER, SMTP_PASS';
-    console.warn('[Email] Invite email not sent to', toEmail, '—', msg);
-    await markLogFailed(logId, msg);
-    return;
-  }
-
-  const registerUrl = `${appUrl()}/register?token=${token}`;
+  const subject      = "You've been invited to InterviewIQ";
+  const logId        = await logEmail({ emailType: 'invite', recipientEmail: toEmail, recipientName: toName || toEmail, subject });
+  const registerUrl  = `${appUrl()}/register?token=${token}`;
 
   const html = emailShell({
     preheader: `${fromName} has invited you to join InterviewIQ.`,
@@ -225,12 +218,11 @@ async function sendInviteEmail({ toEmail, toName, fromName, token }) {
   });
 
   try {
-    await transport.sendMail({
-      from:    `"InterviewIQ" <${process.env.SMTP_USER}>`,
+    await sendViaResend({
       to:      toEmail,
       subject,
-      text:    `Hi ${toName || 'there'},\n\n${fromName} has invited you to join InterviewIQ.\n\nClick the link below to set up your account (expires in 48 hours):\n${registerUrl}\n\nIf you weren't expecting this, ignore this email.\n\n— The InterviewIQ Team`,
       html,
+      text: `Hi ${toName || 'there'},\n\n${fromName} has invited you to join InterviewIQ.\n\nClick the link below to set up your account (expires in 48 hours):\n${registerUrl}\n\nIf you weren't expecting this, ignore this email.\n\n— The InterviewIQ Team`,
     });
     console.info('[Email] Invite email sent to', toEmail);
   } catch (err) {
