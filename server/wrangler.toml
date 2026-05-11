@@ -1,0 +1,50 @@
+name = "interviewiq-api"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ── Deployment target ─────────────────────────────────────────────────────────
+# wrangler deploy        → deploys to Cloudflare Workers (migration target)
+# node server.js         → current production runtime (Render)
+#
+# Do NOT deploy this Worker to production until all routes have been ported
+# from server.js. See migration roadmap in worker.js.
+
+# ── Environment variables ─────────────────────────────────────────────────────
+# Set real values via: wrangler secret put <KEY>
+# These placeholders document every variable the application needs.
+[vars]
+NODE_ENV               = "production"
+APP_URL                = ""          # e.g. https://api.interviewiq.app
+CLIENT_URL             = ""          # e.g. https://interviewiq.pages.dev
+
+# Auth
+JWT_SECRET             = ""
+JWT_EXPIRES_IN         = "8h"
+
+# Supabase
+SUPABASE_URL           = ""
+SUPABASE_SERVICE_ROLE_KEY = ""
+SUPABASE_STORAGE_BUCKET   = ""
+
+# Anthropic
+CLAUDE_API_KEY         = ""
+
+# Cloudflare Turnstile (bot protection)
+TURNSTILE_SECRET_KEY   = ""
+
+# Email (SMTP — replace with Resend or CF Email Workers for the Worker migration)
+SMTP_HOST              = ""
+SMTP_PORT              = "587"
+SMTP_SECURE            = "false"
+SMTP_USER              = ""
+SMTP_PASS              = ""
+SUPPORT_EMAIL          = ""
+
+# Payments
+PAYMENT_UPI_ID         = ""
+PAYMENT_ACCOUNT_NUMBER = ""
+PAYMENT_IFSC           = ""
+PAYMENT_BANK_NAME      = ""
+PAYMENT_BANK_BRANCH    = ""
+PAYMENT_SWIFT_CODE     = ""

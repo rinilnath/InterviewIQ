@@ -1,0 +1,20 @@
+name = "interviewiq"
+pages_build_output_dir = "dist"
+
+# ── Build config ──────────────────────────────────────────────────────────────
+[build]
+command = "npm run build"
+
+# ── Environment variables ─────────────────────────────────────────────────────
+# Set real values in: Cloudflare Dashboard → Pages → Settings → Env Variables
+# Or via: wrangler pages secret put <KEY> --project-name=interviewiq
+
+[vars]
+# Must point to your live backend. While the backend runs on Render:
+#   VITE_API_BASE_URL = "https://interviewiq-n403.onrender.com/api"
+# After a full CF Workers migration:
+#   VITE_API_BASE_URL = "https://interviewiq-api.<account>.workers.dev/api"
+VITE_API_BASE_URL      = ""
+
+# Cloudflare Turnstile site key (public — safe to expose)
+VITE_TURNSTILE_SITE_KEY = ""

@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "deploy:worker": "wrangler deploy",
+    "deploy:worker:dry": "wrangler deploy --dry-run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
@@ -19,6 +21,7 @@
     "express-rate-limit": "^7.5.0",
     "express-slow-down": "^3.1.0",
     "helmet": "^8.0.0",
+    "hono": "^4.12.18",
     "hpp": "^0.2.3",
     "jsonwebtoken": "^9.0.2",
     "mammoth": "^1.8.0",
@@ -27,7 +30,8 @@
     "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.9"
+    "nodemon": "^3.1.9",
+    "wrangler": "^4.90.0"
   },
   "engines": {
     "node": "22.x"
