@@ -9,3 +9,6 @@ compatibility_flags = ["nodejs_compat"]
 #
 # Do NOT deploy this Worker to production until all routes have been ported
 # from server.js. See migration roadmap in worker.js.
+[observability.logs]
+enabled = true
+invocation_logs = true

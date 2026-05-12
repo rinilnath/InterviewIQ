@@ -20,8 +20,15 @@ const app = new Hono();
 
 // ─── CORS ─────────────────────────────────────────────────────────────────────
 app.use('*', cors({
-  origin: (origin, c) => c.env.CLIENT_URL || '*',
+  origin: [
+    'https://interviewiq-esw.pages.dev',
+    'http://localhost:5173',
+    'http://localhost:4173',
+  ],
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
+  maxAge: 86400,
 }));
 
 // ─── Health check ──────────────────────────────────────────────────────────────
